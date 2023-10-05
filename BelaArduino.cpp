@@ -98,4 +98,8 @@ void BelaArduino_renderBottom(BelaContext* context)
 void BelaArduino_cleanup(BelaContext* context)
 {
 	delete wdigital;
+	for(auto& a : wAnalogIn)
+		delete a;
+	for(auto& a : wAnalogOut)
+		delete a;
 }
