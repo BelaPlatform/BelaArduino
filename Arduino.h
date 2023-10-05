@@ -9,19 +9,26 @@
 #define PROGMEM
 #include <string.h>
 #include <stdlib.h>
+#include <iostream>
 
 void setup();
 void loop();
 struct Print {
 	void begin(uint32_t rate) {};
-	void print();
-	void print(const char* p);
-	void print(int16_t);
-	void print(uint32_t, const char*);
-	void println();
-	void println(const char*, ...);
-	void println(uint32_t);
-	void println(uint32_t, const char*);
+	template <typename T>
+	void print(T arg)
+	{
+		std::cout << arg;
+	}
+	template <typename T>
+	void println(T arg)
+	{
+		std::cout << arg << "\n";
+	}
+	void println()
+	{
+		std::cout << "\n";
+	}
 };
 
 static Print Serial;

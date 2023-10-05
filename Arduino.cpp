@@ -1,29 +1,5 @@
 #include "BelaArduino.h"
 #include "Arduino.h" // has to come after BelaArduino because of the #define s it contains
-#include <stdio.h>
-
-void Print::print() {};
-void Print::print(const char* p) {
-	printf("%s", p);
-}
-void Print::print(int16_t a) {
-	printf("%d", a);
-}
-void Print::print(uint32_t a, const char* f) {
-	printf(f, a);
-}
-void Print::println() {
-	printf("\n");
-}
-void Print::println(const char* s, ...) {
-	printf("%s\n", s); // TODO
-}
-void Print::println(uint32_t a) {
-	printf("%d\n", a);
-}
-void Print::println(uint32_t a, const char* f) {
-	printf("%d\n", a);
-}
 
 uint32_t random(uint32_t max)
 {
