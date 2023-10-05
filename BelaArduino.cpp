@@ -2,16 +2,22 @@
 #include "BelaMsg.h"
 #include "Arduino.h"
 #include <Bela.h>
+#define ENABLE_WATCHER
+
+#ifdef ENABLE_WATCHER
 #include "Watcher.h"
+#endif // ENABLE_WATCHER
 
 std::vector<DigitalChannel> digital;
 Pipe belaArduinoPipe;
 std::vector<float> analogIn;
 std::vector<float> analogOut;
 
+#ifdef ENABLE_WATCHER
 static Watcher<uint32_t>* wdigital;
 static std::vector<Watcher<float>*> wAnalogIn;
 static std::vector<Watcher<float>*> wAnalogOut;
+#endif // ENABLE_WATCHER
 
 static void ArduinoSetup()
 {
@@ -25,6 +31,7 @@ static void ArduinoLoop(void*)
 static AuxiliaryTask arduinoLoopTask;
 bool BelaArduino_setup(BelaContext* context)
 {
+#ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
 	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName);
 	if(context->digital)
@@ -35,6 +42,7 @@ bool BelaArduino_setup(BelaContext* context)
 	wAnalogOut.resize(context->analogOutChannels);
 	for(size_t n = 0; n < context->analogOutChannels; ++n)
 		wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n)});
+#endif // ENABLE_WATCHER
 	analogIn.resize(context->analogInChannels);
 	analogOut.resize(context->analogOutChannels);
 	digital.resize(context->digitalChannels);
@@ -50,6 +58,7 @@ bool BelaArduino_setup(BelaContext* context)
 
 void BelaArduino_renderTop(BelaContext* context)
 {
+#ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
 	for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
 	{
@@ -58,6 +67,7 @@ void BelaArduino_renderTop(BelaContext* context)
 		analogIn[c] = value;
 	}
 	wdigital->set(context->digital[0]);
+#endif // ENABLE_WATCHER
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		if(kDigitalModeInput == digital[c].mode)
@@ -80,6 +90,7 @@ void BelaArduino_renderBottom(BelaContext* context)
 			digitalWrite(context, 0, c, digital[c].value);
 		}
 	}
+#ifdef ENABLE_WATCHER
 	if(!wdigital->hasLocalControl())
 	{
 		// this is actually overwriting the inputs as well.
@@ -93,13 +104,16 @@ void BelaArduino_renderBottom(BelaContext* context)
 		if(!wAnalogOut[c]->hasLocalControl())
 			analogWrite(context, 0, c, *wAnalogOut[c]);
 	}
+#endif // ENABLE_WATCHER
 }
 
 void BelaArduino_cleanup(BelaContext* context)
 {
+#ifdef ENABLE_WATCHER
 	delete wdigital;
 	for(auto& a : wAnalogIn)
 		delete a;
 	for(auto& a : wAnalogOut)
 		delete a;
+#endif // ENABLE_WATCHER
 }

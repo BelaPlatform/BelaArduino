@@ -2,7 +2,6 @@
 #include <vector>
 #include <stdint.h>
 #include <Bela.h>
-#include <Watcher.h>
 
 enum DigitalMode {
 	kDigitalModeInput,
