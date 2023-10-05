@@ -1,4 +1,5 @@
 #include "BelaArduino.h"
+#include "BelaMsg.h"
 #include "Arduino.h"
 #include <Bela.h>
 #include "Watcher.h"
