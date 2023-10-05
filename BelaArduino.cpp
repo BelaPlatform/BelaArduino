@@ -21,6 +21,7 @@ static void ArduinoLoop(void*)
 	while(!Bela_stopRequested())
 		loop();
 }
+static AuxiliaryTask arduinoLoopTask;
 bool BelaArduino_setup(BelaContext* context)
 {
 	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
@@ -42,7 +43,7 @@ bool BelaArduino_setup(BelaContext* context)
 		digital[c].mode = kDigitalModeInput;
 	}
 	ArduinoSetup();
-	Bela_runAuxiliaryTask(ArduinoLoop, 0);
+	arduinoLoopTask = Bela_createAuxiliaryTask(ArduinoLoop, 94, "ArduinoLoop");
 	return true;
 }
 
@@ -61,6 +62,10 @@ void BelaArduino_renderTop(BelaContext* context)
 		if(kDigitalModeInput == digital[c].mode)
 			digital[c].value = digitalRead(context, 0, c);
 	}
+	static bool inited = false;
+	if(!inited)
+		Bela_scheduleAuxiliaryTask(arduinoLoopTask);
+	inited = true;
 }
 
 void BelaArduino_renderBottom(BelaContext* context)
