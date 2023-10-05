@@ -1,6 +1,8 @@
 #include "BelaArduino.h"
 #include "Arduino.h" // has to come after BelaArduino because of the #define s it contains
 
+Print Serial;
+
 uint32_t random(uint32_t max)
 {
 	return random(0, max);

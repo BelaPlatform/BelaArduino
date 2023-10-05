@@ -31,7 +31,7 @@ struct Print {
 	}
 };
 
-static Print Serial;
+extern Print Serial;
 
 unsigned long micros();
 uint32_t millis();
