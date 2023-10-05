@@ -9,8 +9,9 @@
 #define BELA_LIBPD_SCOPE
 #define BELA_LIBPD_MIDI
 #define BELA_LIBPD_TRILL
-#define BELA_LIBPD_GUI
+//#define BELA_LIBPD_GUI
 #define BELA_LIBPD_SERIAL
+#define BELA_LIBPD_ARDUINO
 
 #ifdef BELA_LIBPD_DISABLE_SCOPE
 #undef BELA_LIBPD_SCOPE
@@ -27,6 +28,9 @@
 #ifdef BELA_LIBPD_DISABLE_SERIAL
 #undef BELA_LIBPD_SERIAL
 #endif // BELA_LIBPD_DISABLE_SERIAL
+#ifdef BELA_LIBPD_DISABLE_ARDUINO
+#undef BELA_LIBPD_ARDUINO
+#endif // BELA_LIBPD_DISABLE_ARDUINO
 
 #define PD_THREADED_IO
 #include <libraries/libpd/libpd.h>
@@ -393,6 +397,9 @@ static void serialInputLoop(void* arg) {
 }
 
 #endif // BELA_LIBPD_SERIAL
+#ifdef BELA_LIBPD_ARDUINO
+#include "BelaArduino.h"
+#endif // BELA_LIBPD_ARDUINO
 
 enum { minFirstDigitalChannel = 10 };
 static unsigned int gAnalogChannelsInUse;
@@ -1220,11 +1227,18 @@ bool setup(BelaContext *context, void *userData)
 	gTrillTask = Bela_createAuxiliaryTask(readTouchSensors, 51, "touchSensorRead", NULL);
 	gTrillPipe.setup("trillPipe", 1024);
 #endif // BELA_LIBPD_TRILL
+#ifdef BELA_LIBPD_ARDUINO
+	if(!BelaArduino_setup(context))
+		return false;
+#endif // BELA_LIBPD_ARDUINO
 	return true;
 }
 
 void render(BelaContext *context, void *userData)
 {
+#ifdef BELA_LIBPD_ARDUINO
+	BelaArduino_renderTop(context);
+#endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_GUI
 	while(gGuiControlBuffers.size()) // this won't change within the loop, but it's good not to have to use a separate flag
 	{
@@ -1582,10 +1596,16 @@ void render(BelaContext *context, void *userData)
 			);
 		}
 	}
+#ifdef BELA_LIBPD_ARDUINO
+	BelaArduino_renderBottom(context);
+#endif // BELA_LIBPD_ARDUINO
 }
 
 void cleanup(BelaContext *context, void *userData)
 {
+#ifdef BELA_LIBPD_ARDUINO
+	BelaArduino_cleanup(context);
+#endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_MIDI
 	for(auto a : midi)
 	{
