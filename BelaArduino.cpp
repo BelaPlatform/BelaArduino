@@ -29,6 +29,94 @@ static void ArduinoLoop(void*)
 		loop();
 }
 static AuxiliaryTask arduinoLoopTask;
+
+#include <libraries/libpd/libpd.h>
+
+static std::vector<char> selector(1000);
+static std::vector<char> type(1000);
+void processPipe()
+{
+	static enum WaitingFor {
+		kHeader,
+		kPayload
+	} waitingFor = kHeader;
+	static size_t size;
+	while(1) // breaks when no data is available right now
+	{
+		if(kHeader == waitingFor)
+		{
+			// The header is a size_t containing the message size
+			if(1 == belaArduinoPipe.readRt(size))
+				waitingFor = kPayload;
+			else
+				break;
+		}
+		if(kPayload == waitingFor)
+		{
+			// the message is:
+			// 1 byte: n of tags
+			// n tags
+			// arguments (without padding, possibly unaligned)
+			uint8_t msg[size];;
+			int ret;
+			if((ret = belaArduinoPipe.readRt(msg, size)) != size)
+				break;
+			waitingFor = kHeader;
+			uint8_t numTags = msg[0];
+			const uint8_t* tags = msg + 1;
+			if(numTags < 2 || 's' != tags[0])
+			{
+				rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
+			}
+			// numTags is number of elements in the incoming message.
+			// When sending to Pd, the first element is the receiver name,
+			// so it doesn't count towards message length.
+			size_t numElements = numTags - 1;
+			// Additionally, if the second element is a string, then it
+			// becomes the message "type" (see libpd.h for details),
+			// otherwise it is sent as a list ("untyped").
+			bool isList = ('s' != tags[1]);
+			if(isList)
+				numElements -= 1;
+			libpd_start_message(numElements);
+			uint8_t nextArg = 1 + numTags;
+			for(size_t n = 0; n < numTags; ++n)
+			{
+				if('f' == tags[n])
+				{
+					float val;
+					memcpy(&val, msg + nextArg, sizeof(val));
+					nextArg += sizeof(val);
+					libpd_add_float(val);
+				}
+				if('s' == tags[n])
+				{
+					// look for end of null-delimited string
+					const char* str = (const char*)msg + nextArg;
+					size_t maxLen = sizeof(msg) - nextArg - 1;
+					size_t len = strnlen(str, maxLen);
+					if('\0' != str[len])
+					{
+						rt_fprintf(stderr, "Malformed message\n");
+						break;
+					}
+					nextArg += len + 1;
+					if(0 == n)
+						selector.assign(str, str + len + 1);
+					else if(1 == n)
+						type.assign(str, str + len + 1);
+					else
+						libpd_add_symbol(str);
+				}
+			}
+			if(isList)
+				libpd_finish_list(selector.data());
+			else
+				libpd_finish_message(selector.data(), type.data());
+		}
+	}
+}
+
 bool BelaArduino_setup(BelaContext* context)
 {
 #ifdef ENABLE_WATCHER
@@ -51,13 +139,16 @@ bool BelaArduino_setup(BelaContext* context)
 		digital[c].value = 0;
 		digital[c].mode = kDigitalModeInput;
 	}
+	belaArduinoPipe.setup("BelaArduino");
 	ArduinoSetup();
+	processPipe();
 	arduinoLoopTask = Bela_createAuxiliaryTask(ArduinoLoop, 94, "ArduinoLoop");
 	return true;
 }
 
 void BelaArduino_renderTop(BelaContext* context)
 {
+	processPipe();
 #ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
 	for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)

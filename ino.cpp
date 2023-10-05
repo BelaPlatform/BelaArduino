@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <PdArduino.h>
 
 void setup()
 {
@@ -10,7 +11,8 @@ void setup()
 
 void loop()
 {
-	Serial.print("LOOP ");
+	pdSendMessage("playSound", "one", "two", 123, 123.f);
+	pdSendMessage("stopSound", 1, "uops", 3);
 	Serial.println(analogRead(0));
 	digitalWrite(0, HIGH);
 	digitalWrite(1, digitalRead(2));
