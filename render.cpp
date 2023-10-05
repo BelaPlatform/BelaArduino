@@ -41,7 +41,7 @@
 #include <libraries/Midi/Midi.h>
 #endif // BELA_LIBPD_MIDI
 #ifdef BELA_LIBPD_SCOPE
-#include <libraries/Scope/Scope.h>
+#include "Scope.h"
 #endif // BELA_LIBPD_SCOPE
 #include <string>
 #include <sstream>

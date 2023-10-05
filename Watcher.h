@@ -31,8 +31,8 @@ protected:
 
 #include <algorithm>
 #include <vector>
-#include <libraries/Gui/Gui.h>
-#include <libraries/WriteFile/WriteFile.h>
+#include "Gui.h"
+#include "WriteFile.h"
 
 static inline const JSONArray& JSONGetArray(JSONObject& root, const std::string& key)
 {
