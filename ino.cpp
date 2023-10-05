@@ -7,17 +7,22 @@ void setup()
 	pinMode(0, OUTPUT);
 	pinMode(1, OUTPUT);
 	pinMode(2, INPUT);
+	pdSendMessage("loadSound", 0, "kick.wav");
+	pdSendMessage("loadSound", 1, "snare.wav");
 }
 
 void loop()
 {
-	pdSendMessage("playSound", "one", "two", 123, 123.f);
-	pdSendMessage("stopSound", 1, "uops", 3);
-	Serial.println(analogRead(0));
+	pdSendMessage("playSound", 0);
 	digitalWrite(0, HIGH);
 	digitalWrite(1, digitalRead(2));
-	delay(500);
+	delay(100);
+	pdSendMessage("stopSound", 0);
+	delay(400);
+	pdSendMessage("playSound", 1);
 	digitalWrite(0, LOW);
 	digitalWrite(1, digitalRead(2));
-	delay(500);
+	delay(100);
+	pdSendMessage("stopSound", 1);
+	delay(400);
 }
