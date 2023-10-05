@@ -83,6 +83,12 @@ void analogWrite(uint32_t channel, float value)
 
 #include <unistd.h>
 void delay(uint32_t t) {
+	// split across multiple stops so we can exit smoothly on a long wait
+	while(t > 100 && !Bela_stopRequested())
+	{
+		usleep(100 * 1000);
+		t -= 100 ;
+	}
 	usleep(t * 1000);
 }
 void utoa(uint32_t num, char* dest, size_t len) {
