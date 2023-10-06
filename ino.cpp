@@ -7,6 +7,7 @@ void setup()
 	pinMode(0, OUTPUT);
 	pinMode(1, OUTPUT);
 	pinMode(2, INPUT);
+	pinMode(3, OUTPUT);
 	pdSendMessage("loadSound", 0, "kick.wav");
 	pdSendMessage("loadSound", 1, "snare.wav");
 }
@@ -16,12 +17,15 @@ void loop()
 	pdSendMessage("playSound", 0);
 	digitalWrite(0, HIGH);
 	digitalWrite(1, digitalRead(2));
+	pwmWrite(3, 0.05);
 	delay(100);
 	pdSendMessage("stopSound", 0);
 	delay(400);
+
 	pdSendMessage("playSound", 1);
 	digitalWrite(0, LOW);
 	digitalWrite(1, digitalRead(2));
+	pwmWrite(3, 0.3);
 	delay(100);
 	pdSendMessage("stopSound", 1);
 	delay(400);
