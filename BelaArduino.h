@@ -12,7 +12,8 @@ struct DigitalChannel {
 	DigitalMode mode;
 	uint16_t value;
 };
-static constexpr size_t kPwmPeriod = 255;
+// assumed to be power of 2
+static constexpr size_t kPwmPeriod = 256;
 
 extern std::vector<DigitalChannel> digital;
 extern Pipe belaArduinoPipe;

@@ -172,15 +172,29 @@ void BelaArduino_renderTop(BelaContext* context)
 
 void BelaArduino_renderBottom(BelaContext* context)
 {
+	static uint32_t pwmClock = 0;
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		// mode is set from Arduino
 		int mode = (kDigitalModeInput == digital[c].mode) ? INPUT : OUTPUT;
 		pinMode(context, 0, c, mode);
-		if(OUTPUT == mode) {
-			digitalWrite(context, 0, c, digital[c].value);
+		if(OUTPUT == mode)
+		{
+			if(kDigitalModeOutput == digital[c].mode)
+				digitalWrite(context, 0, c, digital[c].value);
+			if(kDigitalModePwm == digital[c].mode)
+			{
+				uint8_t clock = pwmClock;
+				for(size_t n = 0; n < context->digitalFrames; ++n)
+				{
+					clock = (clock + 1) & (kPwmPeriod - 1);
+					bool value = digital[c].value > clock;
+					digitalWriteOnce(context, n, c, value);
+				}
+			}
 		}
 	}
+	pwmClock = (pwmClock + context->digitalFrames) & (kPwmPeriod - 1);
 #ifdef ENABLE_WATCHER
 	if(!wdigital->hasLocalControl())
 	{

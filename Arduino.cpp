@@ -57,7 +57,9 @@ void pwmWrite(uint32_t channel, float value)
 	if(channel < digital.size())
 	{
 		digital[channel].mode = kDigitalModePwm;
-		digital[channel].value = value * kPwmPeriod;
+		uint16_t pwmWidth = value * kPwmPeriod;
+		pwmWidth = value >= 1 || pwmWidth > kPwmPeriod ? kPwmPeriod : pwmWidth;
+		digital[channel].value = pwmWidth;
 	}
 }
 
