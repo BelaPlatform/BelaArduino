@@ -17,6 +17,8 @@ std::vector<float> analogOut;
 static Watcher<uint32_t>* wdigital;
 static std::vector<Watcher<float>*> wAnalogIn;
 static std::vector<Watcher<float>*> wAnalogOut;
+static std::vector<Watcher<float>*> wAudioIn;
+static std::vector<Watcher<float>*> wAudioOut;
 #endif // ENABLE_WATCHER
 
 static void ArduinoSetup()
@@ -119,6 +121,16 @@ void processPipe()
 
 bool BelaArduino_setup(BelaContext* context)
 {
+	if((context->analogFrames && context->analogFrames != context->audioFrames) || (context->digitalFrames && context->digitalFrames != context->audioFrames))
+	{
+		fprintf(stderr, "Error: analog, audio and digital must have the same sampling rate\n");
+		return false;
+	}
+	if(context->flags & BELA_FLAG_INTERLEAVED)
+	{
+		fprintf(stderr, "Error: buffers most be non-interleaved\n");
+		return false;
+	}
 #ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
 	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName);
@@ -130,6 +142,14 @@ bool BelaArduino_setup(BelaContext* context)
 	wAnalogOut.resize(context->analogOutChannels);
 	for(size_t n = 0; n < context->analogOutChannels; ++n)
 		wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n)});
+
+	wAudioIn.resize(context->audioInChannels);
+	for(size_t n = 0; n < context->audioInChannels; ++n)
+		wAudioIn[n] = new Watcher<float>({std::string("audioIn") + std::to_string(n)});
+
+	wAudioOut.resize(context->audioOutChannels);
+	for(size_t n = 0; n < context->audioOutChannels; ++n)
+		wAudioOut[n] = new Watcher<float>({std::string("audioOut") + std::to_string(n)});
 #endif // ENABLE_WATCHER
 	analogIn.resize(context->analogInChannels);
 	analogOut.resize(context->analogOutChannels);
@@ -146,33 +166,27 @@ bool BelaArduino_setup(BelaContext* context)
 	return true;
 }
 
-static float analogReadUniversal(BelaContext* context, int frame, int channel)
-{
-	if(context->flags & BELA_FLAG_INTERLEAVED)
-		return analogRead(context, frame, channel);
-	else
-		return analogReadNI(context, frame, channel);
-}
-
-static void analogWriteUniversal(BelaContext* context, int frame, int channel, float value)
-{
-	if(context->flags & BELA_FLAG_INTERLEAVED)
-		return analogWrite(context, frame, channel, value);
-	else
-		return analogWriteNI(context, frame, channel, value);
-}
 void BelaArduino_renderTop(BelaContext* context)
 {
 	processPipe();
 #ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
-	for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
+	for(size_t n = 0; n < context->audioFrames; ++n) // assumes uniform sampling rate and non-interleaved buffers
 	{
-		float value = analogReadUniversal(context, 0, c);
-		wAnalogIn[c]->set(value);
-		analogIn[c] = value;
+		for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
+		{
+			float value = analogReadNI(context, n, c);
+			wAnalogIn[c]->set(value);
+			if(0 == n)
+				analogIn[c] = value;
+		}
+		for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
+		{
+			float value = audioReadNI(context, n, c);
+			wAudioIn[c]->set(value);
+		}
+		wdigital->set(context->digital[n]);
 	}
-	wdigital->set(context->digital[0]);
 #endif // ENABLE_WATCHER
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
@@ -222,7 +236,15 @@ void BelaArduino_renderBottom(BelaContext* context)
 	for(size_t c = 0; c < context->analogOutChannels; ++c)
 	{
 		if(!wAnalogOut[c]->hasLocalControl())
-			analogWriteUniversal(context, 0, c, *wAnalogOut[c]);
+			analogWriteNI(context, 0, c, *wAnalogOut[c]);
+	}
+	for(size_t n = 0; n < context->audioFrames; ++n)
+	{
+		for(size_t c = 0; c < context->audioOutChannels; ++c)
+		{
+			float val = context->audioOut[c * context->audioFrames + n];
+			wAudioOut[c]->set(val);
+		}
 	}
 #endif // ENABLE_WATCHER
 }
