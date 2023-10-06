@@ -146,6 +146,21 @@ bool BelaArduino_setup(BelaContext* context)
 	return true;
 }
 
+static float analogReadUniversal(BelaContext* context, int frame, int channel)
+{
+	if(context->flags & BELA_FLAG_INTERLEAVED)
+		return analogRead(context, frame, channel);
+	else
+		return analogReadNI(context, frame, channel);
+}
+
+static void analogWriteUniversal(BelaContext* context, int frame, int channel, float value)
+{
+	if(context->flags & BELA_FLAG_INTERLEAVED)
+		return analogWrite(context, frame, channel, value);
+	else
+		return analogWriteNI(context, frame, channel, value);
+}
 void BelaArduino_renderTop(BelaContext* context)
 {
 	processPipe();
@@ -153,7 +168,7 @@ void BelaArduino_renderTop(BelaContext* context)
 	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
 	for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
 	{
-		float value = analogRead(context, 0, c);
+		float value = analogReadUniversal(context, 0, c);
 		wAnalogIn[c]->set(value);
 		analogIn[c] = value;
 	}
@@ -207,7 +222,7 @@ void BelaArduino_renderBottom(BelaContext* context)
 	for(size_t c = 0; c < context->analogOutChannels; ++c)
 	{
 		if(!wAnalogOut[c]->hasLocalControl())
-			analogWrite(context, 0, c, *wAnalogOut[c]);
+			analogWriteUniversal(context, 0, c, *wAnalogOut[c]);
 	}
 #endif // ENABLE_WATCHER
 }
