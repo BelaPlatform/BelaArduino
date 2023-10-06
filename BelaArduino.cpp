@@ -8,17 +8,103 @@
 #include "Watcher.h"
 #endif // ENABLE_WATCHER
 
+#include <math.h>
+#include <array>
+#include <algorithm>
+/// A constant-CPU, continuous output, CPU- and memory-efficient RMS detector
+class RmsDetector {
+public:
+	RmsDetector()
+	{
+		setup();
+	}
+	void setup()
+	{
+		x0 = x1 = y1 = 0;
+		env = 0;
+		rms = 0;
+		rmsAcc = 0;
+		rmsIdx = 0;
+		rmsBuffer.fill(0);
+		setDecay(0.1);
+	}
+	void process(float input)
+	{
+		//high pass
+		// [b, a] = butter(1, 10/44250, 'high')
+		const float b0 = 0.999630537400518;
+		const float b1 = -0.999630537400518;
+		const float a1 = -0.999261074801036;
+		float x0 = input;
+		float y = x1 * b1 + x0 * b0 - y1 * a1;
+		x1 = x0;
+		y1 = y;
+		// times 2 to compensate for abs()
+		float in = abs(y) * 2.f;
+		// compute RMS
+		uint16_t newRmsVal = in * in * 65536.f;
+		uint16_t oldRmsVal = rmsBuffer[rmsIdx];
+		rmsAcc = rmsAcc + newRmsVal - oldRmsVal;
+		rmsBuffer[rmsIdx] = newRmsVal;
+		rmsIdx++;
+		if(rmsIdx >= rmsBuffer.size())
+			rmsIdx = 0;
+		float envIn = std::min(1.f, rmsAcc / 65536.f / float(rmsBuffer.size()));
+		rms = envIn;
+		// peak envelope detector
+		if(envIn > env)
+		{
+			env = envIn;
+		} else {
+			env = env * decay;
+		}
+	}
+	void setDecay(float cutoff)
+	{
+		// wrangling the range to make it somehow useful
+		// TODO: put more method into this
+		float par = cutoff;
+		float bottom = 0.000005;
+		float top = 0.0005;
+		// we want par to be between about bottom and top
+		// we want values to be closer to the bottom when the slider is higher
+		par = 1.f - par;
+		// We want changes to the input to have smaller effect closer to 0.000005
+		par = powf(par, 3) * (top - bottom) + bottom;
+		decay = 1.f - par;
+	}
+	float getRms()
+	{
+		return rms;
+	}
+	float getEnv()
+	{
+		return env;
+	}
+private:
+	float env;
+	float rms;
+	float rmsAcc;
+	float decay;
+	size_t rmsIdx = 0;
+	float x0, x1, y1;
+	std::array<uint16_t,512> rmsBuffer;
+};
+
 std::vector<DigitalChannel> digital;
 Pipe belaArduinoPipe;
 std::vector<float> analogIn;
 std::vector<float> analogOut;
-
 #ifdef ENABLE_WATCHER
 static Watcher<uint32_t>* wdigital;
 static std::vector<Watcher<float>*> wAnalogIn;
 static std::vector<Watcher<float>*> wAnalogOut;
 static std::vector<Watcher<float>*> wAudioIn;
 static std::vector<Watcher<float>*> wAudioOut;
+std::vector<Watcher<float>*> wEnvIn;
+std::vector<Watcher<float>*> wEnvOut;
+std::vector<RmsDetector> rmsIn;
+std::vector<RmsDetector> rmsOut;
 #endif // ENABLE_WATCHER
 
 static void ArduinoSetup()
@@ -144,12 +230,25 @@ bool BelaArduino_setup(BelaContext* context)
 		wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n)});
 
 	wAudioIn.resize(context->audioInChannels);
+	wEnvIn.resize(context->audioInChannels);
+	rmsIn.resize(context->audioInChannels);
+	float decay = 0.05;
 	for(size_t n = 0; n < context->audioInChannels; ++n)
+	{
 		wAudioIn[n] = new Watcher<float>({std::string("audioIn") + std::to_string(n)});
+		wEnvIn[n] = new Watcher<float>({std::string("envIn") + std::to_string(n)});
+		rmsIn[n].setDecay(decay);
+	}
 
 	wAudioOut.resize(context->audioOutChannels);
+	wEnvOut.resize(context->audioOutChannels);
+	rmsOut.resize(context->audioOutChannels);
 	for(size_t n = 0; n < context->audioOutChannels; ++n)
+	{
 		wAudioOut[n] = new Watcher<float>({std::string("audioOut") + std::to_string(n)});
+		wEnvOut[n] = new Watcher<float>({std::string("envOut") + std::to_string(n)});
+		rmsOut[n].setDecay(decay);
+	}
 #endif // ENABLE_WATCHER
 	analogIn.resize(context->analogInChannels);
 	analogOut.resize(context->analogOutChannels);
@@ -184,6 +283,8 @@ void BelaArduino_renderTop(BelaContext* context)
 		{
 			float value = audioReadNI(context, n, c);
 			wAudioIn[c]->set(value);
+			rmsIn[c].process(value);
+			wEnvIn[c]->set(rmsIn[c].getEnv());
 		}
 		wdigital->set(context->digital[n]);
 	}
@@ -244,6 +345,8 @@ void BelaArduino_renderBottom(BelaContext* context)
 		{
 			float val = context->audioOut[c * context->audioFrames + n];
 			wAudioOut[c]->set(val);
+			rmsOut[c].process(val);
+			wEnvOut[c]->set(rmsOut[c].getEnv());
 		}
 	}
 #endif // ENABLE_WATCHER
