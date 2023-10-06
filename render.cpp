@@ -32,7 +32,7 @@
 #undef BELA_LIBPD_ARDUINO
 #endif // BELA_LIBPD_DISABLE_ARDUINO
 
-#define PD_THREADED_IO
+// #define PD_THREADED_IO
 #include <libraries/libpd/libpd.h>
 #include <DigitalChannelManager.h>
 #include <stdio.h>
