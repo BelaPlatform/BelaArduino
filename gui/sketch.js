@@ -87,6 +87,23 @@ function processValues() {
     let value = buf.buf[0];
     switch(group) {
       case "digital":
+        for(let c = 0; c < nGpios && c < leds.length && c < switches.length; ++c) {
+          let oldIsIn = switches[c].getState(c);
+          let isIn = !!(value & (1 << c));
+          let state = !!(value & (1 << (c + nGpios)));
+          if(oldIsIn != isIn) {
+            switches[c].setState(isIn);
+            // force updating the LED hue depending on the switch's state
+            // TODO: factor this out from mousePressed() and call that instead of
+            // duplicating code here
+            leds[c].makeClickable(!isIn);
+            if(isIn)
+                leds[c].setColour(ledHue);
+            else
+                leds[c].setColour(buttonHue);
+          }
+          leds[c].setState(state);
+        }
         break;
       case "analogIn":
         if(num < analogLedBars.length) {
