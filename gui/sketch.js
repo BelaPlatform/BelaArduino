@@ -158,6 +158,7 @@ function setupGuis(){
   let led_initial_x = windowWidth/2 - (nGpios + 1) * 0.5 * led_spacing;
   
   switches = [];
+  leds = [];
   for (let i = 0; i < nGpios; i++)
   {
         let x_position = led_initial_x + (i+1) * 50; 
