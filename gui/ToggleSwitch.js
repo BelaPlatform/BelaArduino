@@ -1,6 +1,6 @@
 class ToggleSwitch
 {
-  constructor(width)
+  constructor(width, offTxt, onTxt)
   {
     this.w = width;
     this.x = 0;
@@ -20,6 +20,8 @@ class ToggleSwitch
     this.previousState = 1;
     
     this.edgeRounding = 0.2;
+    this.offTxt = offTxt ? offTxt : 'O';
+    this.onTxt = onTxt ? onTxt : 'I';
     
   }
   
@@ -66,11 +68,11 @@ class ToggleSwitch
     {
       squareY = this.y - this.button.offset;
       textY = this.y + this.button.offset;
-      textString = "I";
+      textString = this.onTxt;
     } else {
       squareY = this.y + this.button.offset;
       textY = this.y - this.button.offset;
-      textString = "O";
+      textString = this.offTxt;
     }
     square(this.x, squareY, this.button.w, this.button.w*this.edgeRounding);
     fill(191);
