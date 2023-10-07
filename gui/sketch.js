@@ -21,7 +21,7 @@ function howMany(str, arr) {
 
 let loopbackDemo = false;
 let digitalMask = 0;
-function digitalMaskSetChannel(bit, active) {
+function digitalControlSet(bit, active) {
   let bits = 1 << bit;
   let newMask = (digitalMask & ~bits) | active ? bits : 0;
   if(newMask != digitalMask) {
@@ -34,7 +34,7 @@ function digitalMaskSetChannel(bit, active) {
   digitalSendValues();
 }
 
-function digitalMaskIsChannelControlled(bit) {
+function digitalIsChannelControlled(bit) {
   return !!(digitalMask & (1 << bit));
 }
 
@@ -42,7 +42,7 @@ function digitalSendValues() {
   let value = 0;
   // build the full output value based on visualised LEDs and switches
   for(let c = 0; c < nGpios; ++c) {
-    if(digitalMaskIsChannelControlled(c)) {
+    if(digitalIsChannelControlled(c)) {
       let isIn = !!switches[c].getState();
       let high = !!leds[c].getState();
       value |= (isIn << c) | (high << (c + nGpios));
@@ -127,7 +127,7 @@ function processValues() {
           let oldIsIn = switches[c].getState(c);
           let isIn = !!(value & (1 << c));
           let state = !!(value & (1 << (c + nGpios)));
-          if(digitalMaskIsChannelControlled(c))
+          if(digitalIsChannelControlled(c))
             continue;
           if(oldIsIn != isIn) {
             switches[c].setState(isIn);
@@ -406,7 +406,7 @@ function mousePressed()
   {
     ctlSwitches[i].click();
     if(ctlSwitches[i].hasChanged()) {
-      digitalMaskSetChannel(i, ctlSwitches[i].getState());
+      digitalControlSet(i, ctlSwitches[i].getState());
     }
     switches[i].click();
     if(switches[i].hasChanged())
@@ -421,7 +421,7 @@ function mousePressed()
     
     if(leds[i].hasChanged()) {
       print("Led " + i + " has changed!");
-      if(digitalMaskIsChannelControlled(i)) {
+      if(digitalIsChannelControlled(i)) {
         digitalSendValues();
       }
     }
