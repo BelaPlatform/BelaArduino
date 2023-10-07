@@ -114,7 +114,7 @@ class BarGraph
       this.ledPos[index] =  this.ledPos[index] + i * (1 + this.ledSpacing) * this.led.w;
       this.ledPos[index] = this.ledPos[index] + 0.5 * this.led.w;
       this.ledPos[index] = this.ledPos[index] + 0.5 * this.ledSpacing * this.led.w;
-      this.ledPos[index] = this.ledPos[index] - this.nLeds * 0.5 * (this.led.w + this.led.w * this.ledSpacing);          
+      this.ledPos[index] = this.ledPos[index] - this.nLeds * 0.5 * (this.led.w + this.led.w * this.ledSpacing);
 
     }
 
