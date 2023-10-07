@@ -57,6 +57,37 @@ function digitalSendValues() {
   });
 }
 
+function analogOutControlSet(channel, active) {
+  Watcher.sendCommand({
+    cmd: active ? "control" : "uncontrol",
+    watchers: ["analogOut" + channel],
+  });
+}
+
+let analogOutValues = [];
+function analogOutSendValues() {
+  let values = [];
+  let watchers = [];
+  for(let n = 0; n < ctlAnalogOut.length; ++n) {
+    if(ctlAnalogOut[n].getState()) {
+      let value = sliders[n].getValue();
+      console.log("value", value, n);
+      if(analogOutValues[n] != value) {
+        analogOutValues[n] = value;
+        values.push(value);
+        watchers.push("analogOut" + n);
+      }
+    }
+  }
+  if(watchers.length) {
+    Watcher.sendCommand({
+      cmd: "set",
+      watchers: watchers,
+      values: values,
+    });
+  }
+}
+
 function controlCallback(data) {
   if(!data.watcher)
     return;
@@ -147,7 +178,14 @@ function processValues() {
         if(num < analogLedBars.length) {
           analogLedBars[num].setBarValue(value);
         }
+        break;
       case "analogOut":
+        if(num < sliders.length) {
+          if(ctlAnalogOut[num].getState()) {
+          } else {
+            sliders[num].setValue(value);
+          }
+        }
         break;
       case "envIn":
         if(num < audioLedBars.length) {
@@ -166,6 +204,8 @@ function processValues() {
         break;
       case "audioOut":
         break;
+      default:
+        console.log("unhandled ", group);
     }
   }
 }
@@ -189,6 +229,7 @@ var leds = [];
 var switches = [];
 var ctlSwitches = [];
 var sliders = [];
+var ctlAnalogOut = [];
 var analogLedBars = [];
 var scopes = [];
 var audioLedBars = [];
@@ -200,7 +241,7 @@ var analog_in_x = 200;
 var led_spacing = 50
 
 function setup() {
-  frameRate(20);
+  frameRate(10);
   Watcher.sendCommand({cmd: "list"});
   Bela.control.registerCallback("controlCallback", controlCallback);
   createCanvas(windowWidth, 1.5 * windowHeight);
@@ -231,12 +272,16 @@ function setupGuis(){
         ctlSwitches[i].setState(0);
   }
   
+  ctlAnalogOut = [];
   sliders = [];
   let slider_initial_x = 3*windowWidth/4;
   for (let i = 0; i < nAnalogOut; i++)
   {
       sliders.push(new HSlider(mm2px(75), mm2px(8)));
       sliders[i].position(slider_initial_x, analog_y + i * 50, false);
+      ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
+      ctlAnalogOut[i].position(slider_initial_x - mm2px(55), analog_y + i * 50);
+      ctlAnalogOut[i].setState(0);
   }
 
   analogLedBars = [];
@@ -285,6 +330,9 @@ function draw() {
   for (let i = 0; i < sliders.length; i++)
     sliders[i].draw();
   
+  for (let i = 0; i < ctlAnalogOut.length; i++)
+    ctlAnalogOut[i].draw();
+
   for (let i = 0; i < sliders.length; i++)
   {
     if(i < analogLedBars.length && loopbackDemo)
@@ -429,6 +477,10 @@ function mousePressed()
   
   for (let i = 0; i < sliders.length; i++)
   {
+    ctlAnalogOut[i].click();
+    if(ctlAnalogOut[i].hasChanged()) {
+      analogOutControlSet(i, ctlAnalogOut[i].getState());
+    }
     sliders[i].click();
   }
   
@@ -439,8 +491,14 @@ function mousePressed()
 
 }
 
+function mouseDragged()
+{
+  analogOutSendValues();
+}
+
 function mouseReleased()
 {
+  analogOutSendValues();
   for (let i = 0; i < sliders.length; i++)
   {
       sliders[i].release();
