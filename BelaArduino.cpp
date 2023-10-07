@@ -343,6 +343,15 @@ void BelaArduino_renderBottom(BelaContext* context)
 			context->digital[n] |= *wdigital & mask;
 		}
 	}
+	for(size_t n = 0; n < context->analogFrames; ++n)
+	{
+#ifdef WATCH_LESS
+		if(n > 0)
+			break;
+#endif // WATCH_LESS
+		for(size_t c = 0; c < context->audioOutChannels; ++c)
+			wAnalogOut[c]->set(context->analogOut[c * context->analogFrames + n]);
+	}
 	for(size_t c = 0; c < context->analogOutChannels; ++c)
 	{
 		if(!wAnalogOut[c]->hasLocalControl())
