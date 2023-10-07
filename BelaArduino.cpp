@@ -3,6 +3,7 @@
 #include "Arduino.h"
 #include <Bela.h>
 #define ENABLE_WATCHER
+#define WATCH_LESS
 
 #ifdef ENABLE_WATCHER
 #include "Watcher.h"
@@ -273,6 +274,10 @@ void BelaArduino_renderTop(BelaContext* context)
 	{
 		for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
 		{
+#ifdef WATCH_LESS
+			if(n > 0)
+				break;
+#endif // WATCH_LESS
 			float value = analogReadNI(context, n, c);
 			wAnalogIn[c]->set(value);
 		}
@@ -283,6 +288,10 @@ void BelaArduino_renderTop(BelaContext* context)
 			rmsIn[c].process(value);
 			wEnvIn[c]->set(rmsIn[c].getEnv());
 		}
+#ifdef WATCH_LESS
+		if(n > 0)
+			continue;
+#endif // WATCH_LESS
 		wdigital->set(context->digital[n]);
 	}
 #endif // ENABLE_WATCHER
