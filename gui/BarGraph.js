@@ -19,7 +19,7 @@ class BarGraph
       h: 0
     }
     
-    this.horizontal = true;
+    this.horizontal = horizontal;
 
     this.calcBarSize();
     this.ledPos = new Array(this.nLeds).fill();
@@ -101,18 +101,20 @@ class BarGraph
     
     for(let i = 0; i < this.nLeds; i++)
     {
+      let index  = i;
       if(this.horizontal)
       {
-        this.ledPos[i] = this.x;
+        this.ledPos[index] = this.x;
       }
       else
       {
-          this.ledPos[i] = this.y;
+          index = this.nLeds -1 - i;
+          this.ledPos[index] = this.y;
       }
-      this.ledPos[i] =  this.ledPos[i] + i * (1 + this.ledSpacing) * this.led.w;
-      this.ledPos[i] = this.ledPos[i] + 0.5 * this.led.w;
-      this.ledPos[i] = this.ledPos[i] + 0.5 * this.ledSpacing * this.led.w;
-      this.ledPos[i] = this.ledPos[i] - this.nLeds * 0.5 * (this.led.w + this.led.w * this.ledSpacing);          
+      this.ledPos[index] =  this.ledPos[index] + i * (1 + this.ledSpacing) * this.led.w;
+      this.ledPos[index] = this.ledPos[index] + 0.5 * this.led.w;
+      this.ledPos[index] = this.ledPos[index] + 0.5 * this.ledSpacing * this.led.w;
+      this.ledPos[index] = this.ledPos[index] - this.nLeds * 0.5 * (this.led.w + this.led.w * this.ledSpacing);          
 
     }
 
@@ -154,7 +156,14 @@ class BarGraph
     for(let i = 0; i < this.nLeds; i++)
     {
       fill(this.ledColours[i]);
-      rect(this.ledPos[i], this.y, this.led.w, this.led.h, this.led.w * this.edgeRounding);
+      if(this.horizontal)
+      {
+        rect(this.ledPos[i], this.y, this.led.w, this.led.h, this.led.w * this.edgeRounding);
+      }
+      else
+      {
+        rect(this.x, this.ledPos[i], this.led.h, this.led.w, this.led.w * this.edgeRounding)
+      }
     }
     pop();
   }
