@@ -1,3 +1,5 @@
+// watcher stuff up here
+//
 function preload() {
   let basePath = "/projects/harduino/gui/";
   loadScript(basePath + "HSlider.js");
@@ -5,7 +7,114 @@ function preload() {
   loadScript(basePath + "LED.js");
   loadScript(basePath + "BarGraph.js");
   loadScript(basePath + "SignalScope.js");
+  loadScript(basePath + "../watcher.js");
 }
+
+function howMany(str, arr) {
+  let count = 0;
+  for(let n = 0; n < arr.length; ++n) {
+    if(arr[n].name.search(str) == 0)
+      count++;
+  }
+  return count;
+}
+
+let loopbackDemo = false;
+let digitalMask = 0;
+function controlCallback(data) {
+  if(!data.watcher)
+    return;
+  console.log(data.watcher);
+  if(data.watcher.watchers) {
+    loopbackDemo = false; // now we are being serious
+    let watchers = data.watcher.watchers;
+    Watcher.processList(watchers); // so that parseBuffers() works
+    nGpios = howMany("digital", watchers) ? 16 : 0;
+    nAnalogIn = howMany("analogIn", watchers);
+    nAnalogOut = howMany("analogOut", watchers);
+    nAudioIn = howMany("audioIn", watchers);
+    nAudioOut = howMany("audioOut", watchers);
+    setupGuis(false);
+
+    let monitorWatchers = Array();
+    let monitorPeriods = Array();
+    let streamWatchers = Array();
+    for(let n = 0; n < watchers.length; ++n) {
+      let w = watchers[n].name;
+      if(0 == w.search(/^audio[IO]/)) {
+        streamWatchers.push(w);
+      } else {
+        // scatter updates over time so to minimise chances of dropped blocks.
+        // TODO: once the backend becomes less resource-intensive when sending
+        // data, remove this.
+        monitorWatchers.push(w);
+        monitorPeriods.push(3000 + monitorWatchers.length * 64);
+      }
+    }
+    Watcher.sendCommand({
+      cmd: "monitor",
+      watchers: monitorWatchers,
+      periods: monitorPeriods,
+    });
+    Watcher.sendCommand({
+      cmd: "watch",
+      watchers: streamWatchers,
+    });
+  } else console.log(data.watcher);
+}
+
+function processValues() {
+  let inBufs = Bela.data.buffers;
+  if(!inBufs.length)
+    return;
+  let buffers = Watcher.parseBuffers(inBufs);
+  for(let n = 0; n < buffers.length; ++n) {
+    let buf = buffers[n];
+    let w = buf.watcher;
+    let group;
+    let num;
+    if("digital" == w) {
+      group = "digital";
+    } else {
+      let numStarts = w.search(/[0-9]/);
+      if(-1 == numStarts) {
+        console.log("Unexpected watcher", w);
+        continue;
+      }
+      group = w.substr(0, numStarts);
+      num = parseInt(w.substr(numStarts, w.length));
+    }
+    let value = buf.buf[0];
+    switch(group) {
+      case "digital":
+        break;
+      case "analogIn":
+        if(num < analogLedBars.length) {
+          analogLedBars[num].setBarValue(value);
+        }
+      case "analogOut":
+        break;
+      case "envIn":
+        if(num < audioLedBars.length) {
+          audioLedBars[num].setBarValue(value);
+        }
+        break;
+      case "audioIn":
+        if(num < scopes.length) {
+          for(let n = 0; n < scopes[num].w && n < buf.buf.length; ++n) {
+            let sample = buf.buf[n] * 0.5 + 0.5;
+            scopes[num].addSample(sample);
+          }
+        }
+        break;
+      case "envOut":
+        break;
+      case "audioOut":
+        break;
+    }
+  }
+}
+// mostly original code below
 function mm2px(mm)
 {
   return 96 * mm / 25.4;
@@ -35,10 +144,20 @@ var analog_in_x = 200;
 var led_spacing = 50
 
 function setup() {
+  frameRate(20);
+  Watcher.sendCommand({cmd: "list"});
+  Bela.control.registerCallback("controlCallback", controlCallback);
   createCanvas(windowWidth, 1.5 * windowHeight);
+  // setupGuis() once with default counts, for prototyping purposes
+  // will be overridden in controlCallback in response to "list"c
+  loopbackDemo = true;
+  setupGuis();
+}
   
+function setupGuis(){
   let led_initial_x = windowWidth/2 - (nGpios + 1) * 0.5 * led_spacing;
   
+  switches = [];
   for (let i = 0; i < nGpios; i++)
   {
         let x_position = led_initial_x + (i+1) * 50; 
@@ -51,6 +170,7 @@ function setup() {
         switches[i].position(x_position, led_y + 1.5 * leds[i].diameter, false);
   }
   
+  sliders = [];
   let slider_initial_x = 3*windowWidth/4;
   for (let i = 0; i < nAnalogOut; i++)
   {
@@ -58,6 +178,7 @@ function setup() {
       sliders[i].position(slider_initial_x, analog_y + i * 50, false);
   }
 
+  analogLedBars = [];
   let bar_initial_x = windowWidth/4;
   for (let i = 0; i < nAnalogIn; i++)
   {
@@ -72,6 +193,8 @@ function setup() {
 
   }
   
+  scopes = [];
+  audioLedBars = [];
   for (let i = 0; i < nAudioIn; i++)
   {
       let pos_x = bar_initial_x  + i * (slider_initial_x - bar_initial_x)
@@ -82,10 +205,11 @@ function setup() {
       audioLedBars[i].position(pos_x, scopes[i].y + 0.5 * scopes[i].h + 30, false);
 
   }
-
 }
 
 function draw() {
+  if(!loopbackDemo)
+    processValues();
   background(220);
   
   for (let i = 0; i < leds.length; i++)
@@ -99,7 +223,7 @@ function draw() {
   
   for (let i = 0; i < sliders.length; i++)
   {
-    if(i < analogLedBars.length)
+    if(i < analogLedBars.length && loopbackDemo)
     {
       let val = sliders[i].getValue();
       analogLedBars[i].setBarValue(val);
@@ -111,7 +235,8 @@ function draw() {
   
   for (let i = 0; i < scopes.length; i++)
   {
-    scopes[i].addSample(sliders[i].getValue());
+    if(i < sliders.length && loopbackDemo)
+      scopes[i].addSample(sliders[i].getValue());
     scopes[i].draw();
   }
   
@@ -138,12 +263,15 @@ function draw() {
   text("ANALOG IN", text_x, text_y);
   line(analogLedBars[0].x - 0.5 * analogLedBars[0].bar.w, line_y, analogLedBars[0].x + 0.5 * analogLedBars[0].bar.w, line_y)
   
+if(sliders.length)
+{
   text_x = sliders[0].x
   text_y = sliders[0].y - 40
   line_y = text_y + 10
   
   text("ANALOG OUT", text_x, text_y);
   line(sliders[0].x - 0.5 * sliders[0].w, line_y, sliders[0].x + 0.5 * sliders[0].w, line_y)
+}
 
   
   text_x = (scopes[scopes.length - 1].x -  scopes[0].x)
