@@ -31,6 +31,7 @@ function digitalMaskSetChannel(bit, active) {
       watchers: ["digital"],
     });
   }
+  digitalSendValues();
 }
 
 function digitalMaskIsChannelControlled(bit) {
