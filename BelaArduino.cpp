@@ -276,8 +276,6 @@ void BelaArduino_renderTop(BelaContext* context)
 		{
 			float value = analogReadNI(context, n, c);
 			wAnalogIn[c]->set(value);
-			if(0 == n)
-				analogIn[c] = value;
 		}
 		for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
 		{
@@ -289,6 +287,8 @@ void BelaArduino_renderTop(BelaContext* context)
 		wdigital->set(context->digital[n]);
 	}
 #endif // ENABLE_WATCHER
+	for(size_t c = 0; c < context->analogInChannels; ++c)
+		analogIn[c] = analogReadNI(context, 0, c);
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		if(kDigitalModeInput == digital[c].mode)
