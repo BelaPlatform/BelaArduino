@@ -39,17 +39,16 @@ public:
 		float y = x1 * b1 + x0 * b0 - y1 * a1;
 		x1 = x0;
 		y1 = y;
-		// times 2 to compensate for abs()
-		float in = abs(y) * 2.f;
+		float in = std::min(1.f, abs(y));
 		// compute RMS
-		uint16_t newRmsVal = in * in * 65536.f;
+		uint16_t newRmsVal = in * in * 65535.f;
 		uint16_t oldRmsVal = rmsBuffer[rmsIdx];
 		rmsAcc = rmsAcc + newRmsVal - oldRmsVal;
 		rmsBuffer[rmsIdx] = newRmsVal;
 		rmsIdx++;
 		if(rmsIdx >= rmsBuffer.size())
 			rmsIdx = 0;
-		float envIn = std::min(1.f, rmsAcc / 65536.f / float(rmsBuffer.size()));
+		float envIn = std::min(1.f, rmsAcc / 65535.f / float(rmsBuffer.size()));
 		rms = envIn;
 		// peak envelope detector
 		if(envIn > env)
@@ -84,7 +83,7 @@ public:
 private:
 	float env;
 	float rms;
-	float rmsAcc;
+	uint32_t rmsAcc;
 	float decay;
 	size_t rmsIdx = 0;
 	float x0, x1, y1;
