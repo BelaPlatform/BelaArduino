@@ -325,13 +325,14 @@ void BelaArduino_renderBottom(BelaContext* context)
 	}
 	pwmClock = (pwmClock + context->digitalFrames) & (kPwmPeriod - 1);
 #ifdef ENABLE_WATCHER
-	if(!wdigital->hasLocalControl())
+	unsigned int mask;
+	if((mask = wdigital->getMask()))
 	{
-		// this is actually overwriting the inputs as well.
-		// TODO: we should only set obeying the _mask_
-		// TODO: this will break the PWM
 		for(size_t n = 0; n < context->digitalFrames; ++n)
-			context->digital[n] = *wdigital;
+		{
+			context->digital[n] &= ~mask;
+			context->digital[n] |= *wdigital & mask;
+		}
 	}
 	for(size_t c = 0; c < context->analogOutChannels; ++c)
 	{
