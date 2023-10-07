@@ -1,3 +1,11 @@
+function preload() {
+  let basePath = "/projects/harduino/gui/";
+  loadScript(basePath + "HSlider.js");
+  loadScript(basePath + "ToggleSwitch.js");
+  loadScript(basePath + "LED.js");
+  loadScript(basePath + "BarGraph.js");
+  loadScript(basePath + "SignalScope.js");
+}
 function mm2px(mm)
 {
   return 96 * mm / 25.4;
