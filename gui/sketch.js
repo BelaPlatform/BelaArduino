@@ -1,8 +1,8 @@
 // watcher stuff up here
 //
 function preload() {
-  let basePath = "/projects/harduino/gui/";
-  loadScript(basePath + "HSlider.js");
+  let basePath = "/projects/BelaArduino/gui/";
+  loadScript(basePath + "Slider.js");
   loadScript(basePath + "ToggleSwitch.js");
   loadScript(basePath + "LED.js");
   loadScript(basePath + "BarGraph.js");
@@ -244,7 +244,7 @@ function setup() {
   frameRate(10);
   Watcher.sendCommand({cmd: "list"});
   Bela.control.registerCallback("controlCallback", controlCallback);
-  createCanvas(windowWidth, 1.5 * windowHeight);
+  createCanvas(windowWidth, windowHeight);
   // setupGuis() once with default counts, for prototyping purposes
   // will be overridden in controlCallback in response to "list"c
   loopbackDemo = true;
@@ -277,7 +277,7 @@ function setupGuis(){
   let slider_initial_x = 3*windowWidth/4;
   for (let i = 0; i < nAnalogOut; i++)
   {
-      sliders.push(new HSlider(mm2px(75), mm2px(8)));
+      sliders.push(new Slider(mm2px(75), mm2px(8)));
       sliders[i].position(slider_initial_x, analog_y + i * 50, false);
       ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
       ctlAnalogOut[i].position(slider_initial_x - mm2px(55), analog_y + i * 50);
