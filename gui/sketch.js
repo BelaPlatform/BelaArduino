@@ -21,6 +21,41 @@ function howMany(str, arr) {
 
 let loopbackDemo = false;
 let digitalMask = 0;
+function digitalMaskSetChannel(bit, active) {
+  let bits = 1 << bit;
+  let newMask = (digitalMask & ~bits) | active ? bits : 0;
+  if(newMask != digitalMask) {
+    digitalMask = newMask;
+    Watcher.sendCommand({
+      cmd: digitalMask ? "control" : "uncontrol",
+      watchers: ["digital"],
+    });
+  }
+}
+
+function digitalMaskIsChannelControlled(bit) {
+  return !!(digitalMask & (1 << bit));
+}
+
+function digitalSendValues() {
+  let value = 0;
+  // build the full output value based on visualised LEDs and switches
+  for(let c = 0; c < nGpios; ++c) {
+    if(digitalMaskIsChannelControlled(c)) {
+      let isIn = !!switches[c].getState();
+      let high = !!leds[c].getState();
+      value |= (isIn << c) | (high << (c + nGpios));
+    }
+  }
+  console.log("sending 0x" + value.toString(16));
+  Watcher.sendCommand({
+    cmd: "setMask",
+    watchers: ["digital"],
+    values: [value],
+    masks: [digitalMask | (digitalMask << nGpios)],
+  });
+}
+
 function controlCallback(data) {
   if(!data.watcher)
     return;
@@ -91,6 +126,8 @@ function processValues() {
           let oldIsIn = switches[c].getState(c);
           let isIn = !!(value & (1 << c));
           let state = !!(value & (1 << (c + nGpios)));
+          if(digitalMaskIsChannelControlled(c))
+            continue;
           if(oldIsIn != isIn) {
             switches[c].setState(isIn);
             // force updating the LED hue depending on the switch's state
@@ -366,6 +403,10 @@ function mousePressed()
 {
   for (let i = 0; i < leds.length; i++)
   {
+    ctlSwitches[i].click();
+    if(ctlSwitches[i].hasChanged()) {
+      digitalMaskSetChannel(i, ctlSwitches[i].getState());
+    }
     switches[i].click();
     if(switches[i].hasChanged())
       print("Switch " + i + " has changed!");
@@ -377,8 +418,12 @@ function mousePressed()
         leds[i].setColour(ledHue);
     leds[i].click()
     
-    if(leds[i].hasChanged())
+    if(leds[i].hasChanged()) {
       print("Led " + i + " has changed!");
+      if(digitalMaskIsChannelControlled(i)) {
+        digitalSendValues();
+      }
+    }
   }
   
   for (let i = 0; i < sliders.length; i++)
