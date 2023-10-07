@@ -349,7 +349,7 @@ void BelaArduino_renderBottom(BelaContext* context)
 		if(n > 0)
 			break;
 #endif // WATCH_LESS
-		for(size_t c = 0; c < context->audioOutChannels; ++c)
+		for(size_t c = 0; c < context->analogOutChannels; ++c)
 			wAnalogOut[c]->set(context->analogOut[c * context->analogFrames + n]);
 	}
 	for(size_t c = 0; c < context->analogOutChannels; ++c)
