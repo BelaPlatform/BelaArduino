@@ -195,7 +195,7 @@ var audioLedBars = [];
 
 var text_y = 50;
 var led_y = 65;
-var analog_y = 260;
+var analog_y = 320;
 var analog_in_x = 200;
 var led_spacing = 50
 
@@ -233,24 +233,28 @@ function setupGuis(){
   
   sliders = [];
   let slider_initial_x = 3*windowWidth/4;
+  let slider_spacing = 50;
+  slider_initial_x = slider_initial_x- floor(0.8* nAnalogOut) * slider_spacing
   for (let i = 0; i < nAnalogOut; i++)
   {
-      sliders.push(new Slider(mm2px(75), mm2px(8)));
-      sliders[i].position(slider_initial_x, analog_y + i * 50, false);
+      sliders.push(new Slider(mm2px(6), mm2px(40), false));
+      sliders[i].position(slider_initial_x + i * slider_spacing, analog_y , false);
   }
 
   analogLedBars = [];
   let bar_initial_x = windowWidth/4;
+  let bar_spacing = 50;
+  bar_initial_x = bar_initial_x - floor(0.2* nAnalogIn) * bar_spacing
   for (let i = 0; i < nAnalogIn; i++)
   {
       // analogLedBars.push(new BarGraph(mm2px(4), mm2px(8), 10, analogLedBarHue));
-      analogLedBars.push(new BarGraph(mm2px(0.25), mm2px(8), 320, analogLedBarHue));
+      analogLedBars.push(new BarGraph(mm2px(0.125), mm2px(6), 320, analogLedBarHue, false));
 
       analogLedBars[i].setEdgeSpacing(5);
       analogLedBars[i].setLedSpacing(0);
       analogLedBars[i].setEdgeRounding(0);
  
-      analogLedBars[i].position(bar_initial_x, analog_y + i * 50, false);
+      analogLedBars[i].position(bar_initial_x  + i * bar_spacing, analog_y, false);
 
   }
   
@@ -258,9 +262,9 @@ function setupGuis(){
   audioLedBars = [];
   for (let i = 0; i < nAudioIn; i++)
   {
-      let pos_x = bar_initial_x  + i * (slider_initial_x - bar_initial_x)
+      let pos_x = 2 * windowWidth/6  + i * (2 * windowWidth/6)
       scopes.push(new SignalScope(mm2px(75), (mm2px(50))));
-      scopes[i].position(pos_x, analog_y + (nAnalogIn+2.5) * 50, false);
+      scopes[i].position(pos_x, analog_y + 225, false);
     
       audioLedBars.push(new BarGraph(mm2px(3.75), mm2px(8), 15, audioLedBarHue));
       audioLedBars[i].position(pos_x, scopes[i].y + 0.5 * scopes[i].h + 30, false);
@@ -320,26 +324,29 @@ function draw() {
   text("DIGITAL I/O", text_x, text_y);
   line(leds[0].x - 0.5 * leds[0].diameter, line_y, leds[leds.length-1].x + 0.5 * leds[leds.length-1].diameter, line_y);
   
-  text_x = analogLedBars[0].x
-  text_y = analogLedBars[0].y - 40
+  text_x = analogLedBars[0].x + 0.5 * (analogLedBars[analogLedBars.length - 1].x - analogLedBars[0].x);
+  text_y = analogLedBars[0].y - analogLedBars[0].bar.h * 0.5 - 25;
   line_y = text_y + 10
   
   text("ANALOG IN", text_x, text_y);
   line(analogLedBars[0].x - 0.5 * analogLedBars[0].bar.w, line_y, analogLedBars[0].x + 0.5 * analogLedBars[0].bar.w, line_y)
-  
+  line(analogLedBars[0].x, line_y, analogLedBars[analogLedBars.length - 1].x, line_y)
+
 if(sliders.length)
 {
-  text_x = sliders[0].x
-  text_y = sliders[0].y - 40
+  text_x = sliders[0].x + 0.5 * (sliders[sliders.length - 1].x - sliders[0].x); //sliders[0].x
+  text_y = sliders[0].y - sliders[0].h * 0.5 - 25;
   line_y = text_y + 10
   
   text("ANALOG OUT", text_x, text_y);
-  line(sliders[0].x - 0.5 * sliders[0].w, line_y, sliders[0].x + 0.5 * sliders[0].w, line_y)
+  //line(sliders[0].x - 0.5 * sliders[0].w, line_y, sliders[0].x + 0.5 * sliders[0].w, line_y)
+  line(sliders[0].x, line_y, sliders[sliders.length - 1].x, line_y)
+
 }
 
   
-  text_x = (scopes[scopes.length - 1].x -  scopes[0].x)
-  text_y = scopes[0].y - 0.5 * scopes[0].h - 40
+  text_x = windowWidth/2;
+  text_y = scopes[0].y - 0.5 * scopes[0].h - 25
   line_y = text_y + 10
   
   text("AUDIO IN", text_x, text_y);
