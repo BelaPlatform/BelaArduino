@@ -149,6 +149,7 @@ var nAudioIn = 2;
 
 var leds = [];
 var switches = [];
+var ctlSwitches = [];
 var sliders = [];
 var analogLedBars = [];
 var scopes = [];
@@ -156,7 +157,7 @@ var audioLedBars = [];
 
 var text_y = 50;
 var led_y = 65;
-var analog_y = 220;
+var analog_y = 260;
 var analog_in_x = 200;
 var led_spacing = 50
 
@@ -174,6 +175,7 @@ function setup() {
 function setupGuis(){
   let led_initial_x = windowWidth/2 - (nGpios + 1) * 0.5 * led_spacing;
   
+  ctlSwitches = [];
   switches = [];
   leds = [];
   for (let i = 0; i < nGpios; i++)
@@ -186,6 +188,9 @@ function setupGuis(){
     
         switches.push(new ToggleSwitch(mm2px(8)));
         switches[i].position(x_position, led_y + 1.5 * leds[i].diameter, false);
+        ctlSwitches.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
+        ctlSwitches[i].position(x_position, led_y + 3.0 * leds[i].diameter, false);
+        ctlSwitches[i].setState(0);
   }
   
   sliders = [];
@@ -236,6 +241,9 @@ function draw() {
   for (let i = 0; i < switches.length; i++)
     switches[i].draw();
   
+  for (let i = 0; i < ctlSwitches.length; i++)
+    ctlSwitches[i].draw();
+
   for (let i = 0; i < sliders.length; i++)
     sliders[i].draw();
   
