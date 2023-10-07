@@ -26,8 +26,10 @@ let Watcher = {
     let retBufs = Array();
     for(let k = 0; k < buffers.length; ++k)
     {
+      if(!buffers[k])
+        continue;
       let timestampBuf;
-      let type = Bela.data.buffers[k].type;
+      let type = buffers[k].type;
       if(!type) {
         // when running with old version of the core GUI, type has to be set elsewhere
         backwCompatibility = true;
