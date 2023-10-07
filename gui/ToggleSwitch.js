@@ -74,7 +74,7 @@ class ToggleSwitch
       textY = this.y - this.button.offset;
       textString = this.offTxt;
     }
-    square(this.x, squareY, this.button.w, this.button.w*this.edgeRounding);
+    rect(this.x, squareY, this.button.w, this.button.w, this.button.w*this.edgeRounding);
     fill(191);
     stroke(191);
     textAlign(CENTER, CENTER);
