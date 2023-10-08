@@ -278,33 +278,33 @@ void BelaArduino_renderTop(BelaContext* context)
 	gWatcherConnected = Bela_getDefaultWatcherManager()->getGui().numConnections();
 	if(gWatcherConnected)
 	{
-	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
-	for(size_t n = 0; n < context->audioFrames; ++n) // assumes uniform sampling rate and non-interleaved buffers
-	{
-		for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
+		Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
+		for(size_t n = 0; n < context->audioFrames; ++n) // assumes uniform sampling rate and non-interleaved buffers
 		{
+			for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
+			{
 #ifdef WATCH_ONCE
-			if(n > 0)
-				break;
+				if(n > 0)
+					break;
 #endif // WATCH_ONCE
-			float value = analogReadNI(context, n, c);
-			wAnalogIn[c]->set(value);
-		}
+				float value = analogReadNI(context, n, c);
+				wAnalogIn[c]->set(value);
+			}
 #ifdef WATCH_AUDIO
-		for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
-		{
-			float value = audioReadNI(context, n, c);
-			wAudioIn[c]->set(value);
-			rmsIn[c].process(value);
-			wEnvIn[c]->set(rmsIn[c].getEnv());
-		}
+			for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
+			{
+				float value = audioReadNI(context, n, c);
+				wAudioIn[c]->set(value);
+				rmsIn[c].process(value);
+				wEnvIn[c]->set(rmsIn[c].getEnv());
+			}
 #endif // WATCH_AUDIO
 #ifdef WATCH_ONCE
-		if(n > 0)
-			continue;
+			if(n > 0)
+				continue;
 #endif // WATCH_ONCE
-		wdigital->set(context->digital[n]);
-	}
+			wdigital->set(context->digital[n]);
+		}
 	}
 #endif // ENABLE_WATCHER
 	for(size_t c = 0; c < context->analogInChannels; ++c)
@@ -348,40 +348,40 @@ void BelaArduino_renderBottom(BelaContext* context)
 #ifdef ENABLE_WATCHER
 	if(gWatcherConnected)
 	{
-	unsigned int mask;
-	if((mask = wdigital->getMask()))
-	{
-		for(size_t n = 0; n < context->digitalFrames; ++n)
+		unsigned int mask;
+		if((mask = wdigital->getMask()))
 		{
-			context->digital[n] &= ~mask;
-			context->digital[n] |= *wdigital & mask;
+			for(size_t n = 0; n < context->digitalFrames; ++n)
+			{
+				context->digital[n] &= ~mask;
+				context->digital[n] |= *wdigital & mask;
+			}
 		}
-	}
-	for(size_t n = 0; n < context->analogFrames; ++n)
-	{
+		for(size_t n = 0; n < context->analogFrames; ++n)
+		{
 #ifdef WATCH_ONCE
-		if(n > 0)
-			break;
+			if(n > 0)
+				break;
 #endif // WATCH_ONCE
-		for(size_t c = 0; c < context->analogOutChannels; ++c)
-			wAnalogOut[c]->set(context->analogOut[c * context->analogFrames + n]);
-	}
-	for(size_t c = 0; c < context->analogOutChannels; ++c)
-	{
-		if(!wAnalogOut[c]->hasLocalControl())
-			analogWriteNI(context, 0, c, *wAnalogOut[c]);
-	}
-#ifdef WATCH_AUDIO
-	for(size_t n = 0; n < context->audioFrames; ++n)
-	{
-		for(size_t c = 0; c < context->audioOutChannels; ++c)
-		{
-			float val = context->audioOut[c * context->audioFrames + n];
-			wAudioOut[c]->set(val);
-			rmsOut[c].process(val);
-			wEnvOut[c]->set(rmsOut[c].getEnv());
+			for(size_t c = 0; c < context->analogOutChannels; ++c)
+				wAnalogOut[c]->set(context->analogOut[c * context->analogFrames + n]);
 		}
-	}
+		for(size_t c = 0; c < context->analogOutChannels; ++c)
+		{
+			if(!wAnalogOut[c]->hasLocalControl())
+				analogWriteNI(context, 0, c, *wAnalogOut[c]);
+		}
+#ifdef WATCH_AUDIO
+		for(size_t n = 0; n < context->audioFrames; ++n)
+		{
+			for(size_t c = 0; c < context->audioOutChannels; ++c)
+			{
+				float val = context->audioOut[c * context->audioFrames + n];
+				wAudioOut[c]->set(val);
+				rmsOut[c].process(val);
+				wEnvOut[c]->set(rmsOut[c].getEnv());
+			}
+		}
 #endif // WATCH_AUDIO
 	}
 #endif // ENABLE_WATCHER
