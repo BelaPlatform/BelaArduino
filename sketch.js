@@ -380,17 +380,16 @@ function draw() {
   line(analogLedBars[0].x - 0.5 * analogLedBars[0].bar.w, line_y, analogLedBars[0].x + 0.5 * analogLedBars[0].bar.w, line_y)
   line(analogLedBars[0].x, line_y, analogLedBars[analogLedBars.length - 1].x, line_y)
 
-if(sliders.length)
-{
-  text_x = sliders[0].x + 0.5 * (sliders[sliders.length - 1].x - sliders[0].x); //sliders[0].x
-  text_y = sliders[0].y - sliders[0].h * 0.5 - 25;
-  line_y = text_y + 10
+  if(sliders.length)
+  {
+    text_x = sliders[0].x + 0.5 * (sliders[sliders.length - 1].x - sliders[0].x); //sliders[0].x
+    text_y = sliders[0].y - sliders[0].h * 0.5 - 25;
+    line_y = text_y + 10
   
-  text("ANALOG OUT", text_x, text_y);
-  //line(sliders[0].x - 0.5 * sliders[0].w, line_y, sliders[0].x + 0.5 * sliders[0].w, line_y)
-  line(sliders[0].x, line_y, sliders[sliders.length - 1].x, line_y)
+    text("ANALOG OUT", text_x, text_y);
+    line(sliders[0].x, line_y, sliders[sliders.length - 1].x, line_y)
 
-}
+  }
 
   
   text_x = windowWidth/2;
