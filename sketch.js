@@ -23,7 +23,7 @@ let loopbackDemo = false;
 let digitalMask = 0;
 function digitalControlSet(bit, active) {
   let bits = 1 << bit;
-  let newMask = (digitalMask & ~bits) | active ? bits : 0;
+  let newMask = (digitalMask & ~bits) | (active ? bits : 0);
   if(newMask != digitalMask) {
     digitalMask = newMask;
     Watcher.sendCommand({
