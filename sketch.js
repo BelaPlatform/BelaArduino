@@ -1,7 +1,7 @@
 // watcher stuff up here
 //
 function preload() {
-  let basePath = "/projects/BelaArduino/gui/";
+  let basePath = "/projects/" + Bela.control.handler.project + "/gui/";
   loadScript(basePath + "Slider.js");
   loadScript(basePath + "ToggleSwitch.js");
   loadScript(basePath + "LED.js");
