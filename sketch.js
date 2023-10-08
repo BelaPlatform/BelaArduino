@@ -225,6 +225,7 @@ var nAnalogOut = 8;
 var nAnalogIn = 8;
 var nAudioIn = 2;
 
+let ctlColors;
 var leds = [];
 var switches = [];
 var ctlSwitches = [];
@@ -248,6 +249,11 @@ function setup() {
   // setupGuis() once with default counts, for prototyping purposes
   // will be overridden in controlCallback in response to "list"c
   loopbackDemo = true;
+  ctlColors = {
+    outline: color(0, 0, 0),
+    text: color(0, 255, 0),
+    active: color(0, 128, 0),
+  }
   setupGuis();
 }
   
@@ -267,7 +273,7 @@ function setupGuis(){
     
         switches.push(new ToggleSwitch(mm2px(8)));
         switches[i].position(x_position, led_y + 1.5 * leds[i].diameter, false);
-        ctlSwitches.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
+        ctlSwitches.push(new ToggleSwitch(mm2px(4), ' ', 'C', ctlColors));
         ctlSwitches[i].position(x_position, led_y + 3.0 * leds[i].diameter, false);
         ctlSwitches[i].setState(0);
   }
@@ -281,7 +287,7 @@ function setupGuis(){
   {
       sliders.push(new Slider(mm2px(6), mm2px(40), false));
       sliders[i].position(slider_initial_x + i * slider_spacing, analog_y , false);
-      ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
+      ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C', ctlColors));
       ctlAnalogOut[i].position(slider_initial_x + i * slider_spacing + 20, analog_y + 60);
       ctlAnalogOut[i].setState(0);
   }
