@@ -80,7 +80,8 @@ class Slider
   {
     this.previousValue = this.value;
     this.value = constrain(val, 0, 1);
-    let x = map(this.value, 0, 1, this.slider.min_p, this.slider.max_p);
+    // TODO: doing a 1, 0 map belwo may not be the best way of fixing the upside-down behaviour.
+    let x = map(this.value, 1, 0, this.slider.min_p, this.slider.max_p);
     this.moveSlider(x);
     this.textString = this.getValue(this.precision);
   }
