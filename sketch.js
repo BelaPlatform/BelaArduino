@@ -282,7 +282,7 @@ function setupGuis(){
       sliders.push(new Slider(mm2px(6), mm2px(40), false));
       sliders[i].position(slider_initial_x + i * slider_spacing, analog_y , false);
       ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C'));
-      ctlAnalogOut[i].position(slider_initial_x - mm2px(55), analog_y + i * 50);
+      ctlAnalogOut[i].position(slider_initial_x + i * slider_spacing + 20, analog_y + 60);
       ctlAnalogOut[i].setState(0);
   }
 
