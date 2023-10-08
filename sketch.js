@@ -392,12 +392,14 @@ function draw() {
   }
 
   
+if(scopes.length) {
   text_x = windowWidth/2;
   text_y = scopes[0].y - 0.5 * scopes[0].h - 25
   line_y = text_y + 10
   
   text("AUDIO IN", text_x, text_y);
   line(scopes[0].x - 0.5 * scopes[0].w, line_y, scopes[scopes.length - 1].x + 0.5 * scopes[scopes.length - 1].w, line_y)
+}
 
   pop();
   
