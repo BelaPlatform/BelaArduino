@@ -40,21 +40,30 @@ function digitalIsChannelControlled(bit) {
 }
 
 function digitalSendValues() {
-  let value = 0;
+  let lowWord = 0;
+  let highWord = 0;
   // build the full output value based on visualised LEDs and switches
   for(let c = 0; c < nGpios; ++c) {
     if(digitalIsChannelControlled(c)) {
       let isIn = !!switches[c].getState();
       let high = !!leds[c].getState();
-      value |= (isIn << c) | (high << (c + nGpios));
+      lowWord |= isIn << c;
+      highWord |= high << c;
     }
   }
+  //Javascript has some weird stuff where (1<<31) becomes a negative number
+  // so we have to use multiplication instead, or the 16th bit would break
+  // things when set in the high word. BigInt would perhaps be a better option,
+  // but it requires ECMAScript 2020. See
+  // https://stackoverflow.com/questions/11703599/unsigned-32-bit-integers-in-javascript#comment133608159_11704904
+  let value = lowWord + (highWord * (1 << nGpios));
+  let mask = digitalMask + (digitalMask * (1 << nGpios));
   console.log("sending 0x" + value.toString(16));
   Watcher.sendCommand({
     cmd: "setMask",
     watchers: ["digital"],
     values: [value],
-    masks: [digitalMask | (digitalMask << nGpios)],
+    masks: [mask],
   });
 }
 
