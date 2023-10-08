@@ -158,9 +158,8 @@ function processValues() {
           let oldIsIn = switches[c].getState(c);
           let isIn = !!(value & (1 << c));
           let state = !!(value & (1 << (c + nGpios)));
-          if(digitalIsChannelControlled(c))
-            continue;
-          if(oldIsIn != isIn) {
+          let controlled = digitalIsChannelControlled(c);
+          if(oldIsIn != isIn && !controlled) {
             switches[c].setState(isIn);
             // force updating the LED hue depending on the switch's state
             // TODO: factor this out from mousePressed() and call that instead of
@@ -171,7 +170,8 @@ function processValues() {
             else
                 leds[c].setColour(buttonHue);
           }
-          leds[c].setState(state);
+          if(!controlled || isIn)
+            leds[c].setState(state);
         }
         break;
       case "analogIn":
