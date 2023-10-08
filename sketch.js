@@ -421,7 +421,7 @@ function draw() {
     push();
     textAlign(CENTER, CENTER);
     textSize(15);
-    text(str(i), sliders[i].x - 0.5 * sliders[i].w - 25, sliders[i].y, 25);
+    text(str(i), sliders[i].x - 0.5 * sliders[i].w, sliders[i].y - sliders[i].h / 2 - 6, 25);
     pop();
   }
    
@@ -431,7 +431,7 @@ function draw() {
     push();
     textAlign(CENTER, CENTER);
     textSize(15);
-    text(str(i), analogLedBars[i].x - 0.5 * analogLedBars[i].bar.w - 25, analogLedBars[i].y, 25);
+    text(str(i), analogLedBars[i].x - 0.5 * analogLedBars[i].bar.w, analogLedBars[i].y - analogLedBars[i].bar.h / 2 - 6 , 25);
     pop();
   }   
   
