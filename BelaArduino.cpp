@@ -97,6 +97,7 @@ Pipe belaArduinoPipe;
 std::vector<float> analogIn;
 std::vector<float> analogOut;
 #ifdef ENABLE_WATCHER
+static int gWatcherConnected;
 static Watcher<uint32_t>* wdigital;
 static std::vector<Watcher<float>*> wAnalogIn;
 static std::vector<Watcher<float>*> wAnalogOut;
@@ -274,6 +275,9 @@ void BelaArduino_renderTop(BelaContext* context)
 {
 	processPipe();
 #ifdef ENABLE_WATCHER
+	gWatcherConnected = Bela_getDefaultWatcherManager()->getGui().numConnections();
+	if(gWatcherConnected)
+	{
 	Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
 	for(size_t n = 0; n < context->audioFrames; ++n) // assumes uniform sampling rate and non-interleaved buffers
 	{
@@ -300,6 +304,7 @@ void BelaArduino_renderTop(BelaContext* context)
 			continue;
 #endif // WATCH_ONCE
 		wdigital->set(context->digital[n]);
+	}
 	}
 #endif // ENABLE_WATCHER
 	for(size_t c = 0; c < context->analogInChannels; ++c)
@@ -341,6 +346,8 @@ void BelaArduino_renderBottom(BelaContext* context)
 	}
 	pwmClock = (pwmClock + context->digitalFrames) & (kPwmPeriod - 1);
 #ifdef ENABLE_WATCHER
+	if(gWatcherConnected)
+	{
 	unsigned int mask;
 	if((mask = wdigital->getMask()))
 	{
@@ -376,6 +383,7 @@ void BelaArduino_renderBottom(BelaContext* context)
 		}
 	}
 #endif // WATCH_AUDIO
+	}
 #endif // ENABLE_WATCHER
 }
 
