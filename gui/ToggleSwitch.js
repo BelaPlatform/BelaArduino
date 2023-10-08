@@ -30,6 +30,7 @@ class ToggleSwitch
         text: 191,
       }
     this.colors = colors;
+    this.visible = true;
   }
   
   position(x, y, display=true)
@@ -58,6 +59,8 @@ class ToggleSwitch
   draw()
   {
     this.previousState = this.state;
+    if(!this.visible)
+      return;
     
     push();
     rectMode(CENTER);
@@ -109,5 +112,8 @@ class ToggleSwitch
     {
     }
   }
-
+  show(visible)
+  {
+    this.visible = visible;
+  }
 }
