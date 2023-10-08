@@ -1,6 +1,6 @@
 class ToggleSwitch
 {
-  constructor(width, offTxt, onTxt)
+  constructor(width, offTxt, onTxt, colors)
   {
     this.w = width;
     this.x = 0;
@@ -23,6 +23,13 @@ class ToggleSwitch
     this.offTxt = offTxt ? offTxt : 'O';
     this.onTxt = onTxt ? onTxt : 'I';
     
+    if(!colors)
+      colors = {
+        outline: 128,
+        active: 0,
+        text: 191,
+      }
+    this.colors = colors;
   }
   
   position(x, y, display=true)
@@ -56,11 +63,11 @@ class ToggleSwitch
     rectMode(CENTER);
     noStroke();
     // Switch outline
-    fill(128);
+    fill(this.colors.outline);
     rect(this.x, this.y, this.w, 2 * this.w, this.w*this.edgeRounding);
     
     // Switch toggle
-    fill(0);
+    fill(this.colors.active);
     let squareY;
     let textY;
     let textString = "";
@@ -75,8 +82,8 @@ class ToggleSwitch
       textString = this.offTxt;
     }
     rect(this.x, squareY, this.button.w, this.button.w, this.button.w*this.edgeRounding);
-    fill(191);
-    stroke(191);
+    fill(this.colors.text);
+    stroke(this.colors.text);
     textAlign(CENTER, CENTER);
     textSize(0.65 * this.button.w);
     text(textString, this.x, textY, this.button.w, this.button.w);
