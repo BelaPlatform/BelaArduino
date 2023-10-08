@@ -491,8 +491,6 @@ function mousePressed()
       digitalControlSet(i, ctlSwitches[i].getState());
     }
     switches[i].click();
-    if(switches[i].hasChanged())
-      print("Switch " + i + " has changed!");
     let s_state = switches[i].getState();
     leds[i].makeClickable(!s_state);
     if(simplifiedCtl){
@@ -505,8 +503,8 @@ function mousePressed()
         leds[i].setColour(ledHue);
     leds[i].click()
     
-    if(leds[i].hasChanged()) {
-      print("Led " + i + " has changed!");
+    if(leds[i].hasChanged() || switches[i].hasChanged()) {
+      console.log("Gpio " + i + " has changed to", switches[i].getState() ? "input" : "output", leds[i].getState());
       if(digitalIsChannelControlled(i)) {
         digitalSendValues();
       }
