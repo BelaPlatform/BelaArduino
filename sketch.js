@@ -19,6 +19,7 @@ function howMany(str, arr) {
   return count;
 }
 
+let simplifiedCtl = false;
 let loopbackDemo = false;
 let digitalMask = 0;
 function digitalControlSet(bit, active) {
@@ -287,6 +288,7 @@ function setupGuis(){
   {
       sliders.push(new Slider(mm2px(6), mm2px(40), false));
       sliders[i].position(slider_initial_x + i * slider_spacing, analog_y , false);
+      sliders[i].setValue(0);
       ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C', ctlColors));
       ctlAnalogOut[i].position(slider_initial_x + i * slider_spacing + 20, analog_y + 60);
       ctlAnalogOut[i].setState(0);
@@ -320,6 +322,15 @@ function setupGuis(){
       audioLedBars.push(new BarGraph(mm2px(3.75), mm2px(8), 15, audioLedBarHue));
       audioLedBars[i].position(pos_x, scopes[i].y + 0.5 * scopes[i].h + 30, false);
 
+  }
+  if(simplifiedCtl) {
+    ctlSwitches.forEach((el) => { el.show(false); });
+    ctlAnalogOut.map((v, i, a) => {
+      let el = a[i];
+      el.setState(true);
+      analogOutControlSet(i, ctlAnalogOut[i].getState());
+      el.show(false);
+    });
   }
 }
 
@@ -475,6 +486,10 @@ function mousePressed()
       print("Switch " + i + " has changed!");
     let s_state = switches[i].getState();
     leds[i].makeClickable(!s_state);
+    if(simplifiedCtl){
+      digitalControlSet(i, 0 == switches[i].getState());
+    }
+
     if(!s_state)
         leds[i].setColour(buttonHue);
     else
