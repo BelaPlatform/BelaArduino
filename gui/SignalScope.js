@@ -70,7 +70,7 @@ class SignalScope
     {
       if(mouseX > this.x - 0.5 * this.w && mouseX < this.x + 0.5 * this.w)
       {
-        if(mouseY > this.y - this.h && mouseY < this.y + 0.5 * this.h)
+        if(mouseY > this.y - 0.5 * this.h && mouseY < this.y + 0.5 * this.h)
         {
           this.doFreeze();
         }
