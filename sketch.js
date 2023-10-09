@@ -219,7 +219,20 @@ function processValues() {
     }
   }
 }
-// mostly original code below
+
+document.addEventListener('visibilitychange', function() {
+  updateClientActive(!document.hidden)
+});
+
+let clientActive = null;
+function updateClientActive(active) {
+  if(active !== clientActive) {
+    clientActive = active;
+    let evt = clientActive ? "active" : "inactive";
+    Bela.control.send({event: evt});
+  }
+}
+
 function mm2px(mm)
 {
   return 96 * mm / 25.4;
@@ -343,7 +356,15 @@ function setupGuis(){
   }
 }
 
+let clientActiveTimeout;
 function draw() {
+  // refresh watchdog
+  clearTimeout(clientActiveTimeout);
+  clientActiveTimeout = setTimeout(() => {
+    updateClientActive(false);
+  }, 1000);
+  updateClientActive(true);
+
   if(!loopbackDemo)
     processValues();
   background(220);
