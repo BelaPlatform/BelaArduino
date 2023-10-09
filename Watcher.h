@@ -167,6 +167,7 @@ public:
 			.countRelTimestamps = 0,
 			.monitoring = kMonitorDont,
 			.logEventTimestamp = -1u,
+			.logEventTimestampEnd = -1u,
 			.watched = false,
 			.controlled = false,
 			.logged = kLoggedNo,
@@ -201,10 +202,10 @@ public:
 				switch(msg.cmd)
 				{
 					case Msg::kCmdStartLogging:
-						startLogging(msg.priv, msg.arg);
+						startLogging(msg.priv, msg.args[0], msg.args[1]);
 						break;
 					case Msg::kCmdStopLogging:
-						stopLogging(msg.priv, msg.arg);
+						stopLogging(msg.priv, msg.args[0]);
 						break;
 					case Msg::kCmdNone:
 						break;
@@ -214,6 +215,7 @@ public:
 				pipeReceivedRt = pipeSentNonRt;
 			}
 		}
+		clientActive = gui.numActiveConnections();
 	}
 	// the relevant object is passed back here so that we don't have to waste
 	// time looking it up
@@ -233,6 +235,12 @@ public:
 				// so you'll get a dropout in the watching if you
 				// are watching right now
 				p->count = 0;
+				if(-1 != p->logEventTimestampEnd) {
+					// if an end timestamp is provided,
+					// schedule the end immediately
+					p->logEventTimestamp = p->logEventTimestampEnd;
+					p->logged = kLoggedStopping;
+				}
 			}
 			else if(kLoggedStopping == p->logged)
 				p->logged = kLoggedLast;
@@ -250,14 +258,17 @@ public:
 			}
 			if(timestamp >= p->monitoringNext)
 			{
-				// big enough for the timestamp and one value
-				// and possibly some padding bytes at the end
-				// (though in practice there won't be any when
-				// sizeof(T) <= kMsgHeaderLength)
-				uint8_t data[((kMsgHeaderLength + sizeof(value) + sizeof(T) - 1) / sizeof(T)) * sizeof(T)];
-				memcpy(data, &timestamp, kMsgHeaderLength);
-				memcpy(data + kMsgHeaderLength, &value, sizeof(value));
-				gui.sendBuffer(p->guiBufferId, (T*)data, sizeof(data) / sizeof(T));
+				if(clientActive)
+				{
+					// big enough for the timestamp and one value
+					// and possibly some padding bytes at the end
+					// (though in practice there won't be any when
+					// sizeof(T) <= kMsgHeaderLength)
+					uint8_t data[((kMsgHeaderLength + sizeof(value) + sizeof(T) - 1) / sizeof(T)) * sizeof(T)];
+					memcpy(data, &timestamp, kMsgHeaderLength);
+					memcpy(data + kMsgHeaderLength, &value, sizeof(value));
+					gui.sendBuffer(p->guiBufferId, (T*)data, sizeof(data) / sizeof(T));
+				}
 				if(1 == p->monitoring)
 				{
 					// special case: one-shot
@@ -267,7 +278,7 @@ public:
 					p->monitoringNext = timestamp + p->monitoring;
 			}
 		}
-		if(p->watched || isLogging(p))
+		if((p->watched && clientActive) || isLogging(p))
 		{
 			if(0 == p->count)
 			{
@@ -353,6 +364,7 @@ private:
 		uint32_t monitoring;
 		AbsTimestamp monitoringNext;
 		AbsTimestamp logEventTimestamp;
+		AbsTimestamp logEventTimestampEnd;
 		bool watched;
 		bool controlled;
 		Logged logged;
@@ -365,7 +377,7 @@ private:
 			kCmdStartLogging,
 			kCmdStopLogging,
 		} cmd;
-		uint64_t arg;
+		uint64_t args[2];
 	};
 	bool isLogging(const Priv* p) const
 	{
@@ -374,7 +386,7 @@ private:
 	template <typename T>
 	void send(Priv* p) {
 		size_t size = p->v.size(); // TODO: customise this for smaller frames
-		if(p->watched)
+		if(clientActive && p->watched)
 			gui.sendBuffer(p->guiBufferId, (T*)p->v.data(), size / sizeof(T));
 		if(isLogging(p))
 			p->logger->log((float*)p->v.data(), size / sizeof(float));
@@ -404,11 +416,14 @@ private:
 		p->controlled = false;
 		p->w->localControl(true);
 	}
-	void startLogging(Priv* p, AbsTimestamp timestamp) {
+	void startLogging(Priv* p, AbsTimestamp timestamp, AbsTimestamp timestampEnd) {
 		if(kLoggedNo != p->logged)
 			return;
 		p->logged = kLoggedStarting;
 		p->logEventTimestamp = timestamp;
+		if(timestampEnd <= timestamp)
+			timestampEnd = -1; // invalid
+		p->logEventTimestampEnd = timestampEnd;
 		p->hasLogged = true;
 	}
 	void stopLogging(Priv* p, AbsTimestamp timestamp) {
@@ -421,7 +436,7 @@ private:
 		p->monitoring = (kMonitorChange | period);
 	}
 	void setupLogger(Priv* p) {
-		delete p->logger;
+		cleanupLogger(p);
 		p->logger = new WriteFile((p->name + ".bin").c_str(), false, false);
 		p->logger->setFileType(kBinary);
 		p->logFileName = p->logger->getName();
@@ -507,6 +522,7 @@ private:
 				const JSONArray& watchers = JSONGetArray(el, "watchers");
 				const JSONArray& periods = JSONGetArray(el, "periods"); // used only by 'monitor'
 				const JSONArray& timestamps = JSONGetArray(el, "timestamps"); // used only by some commands
+				const JSONArray& timestampsEnd = JSONGetArray(el, "timestampsEnd"); // used only by some commands
 				size_t numSent = 0;
 				for(size_t n = 0; n < watchers.size(); ++n)
 				{
@@ -516,12 +532,15 @@ private:
 					if(p)
 					{
 						AbsTimestamp timestamp = 0;
+						AbsTimestamp timestampEnd = -1;
 						Msg msg {
 							.priv = p,
 							.cmd = Msg::kCmdNone,
 						};
 						if(n < timestamps.size())
 							timestamp = JSONGetAsNumber(timestamps[n]);
+						if(n < timestampsEnd.size())
+							timestampEnd = JSONGetAsNumber(timestampsEnd[n]);
 						if("watch" == cmd)
 							startWatching(p);
 						else if("unwatch" == cmd)
@@ -534,8 +553,8 @@ private:
 							if(isLogging(p))
 								continue;
 							msg.cmd = Msg::kCmdStartLogging;
-							msg.arg = timestamp;
-							cleanupLogger(p);
+							msg.args[0] = timestamp;
+							msg.args[1] = timestampEnd;
 							setupLogger(p);
 							JSONObject watcher;
 							watcher[L"watcher"] = new JSONValue(JSON::s2ws(str));
@@ -543,7 +562,7 @@ private:
 							sendJsonResponse(new JSONValue(watcher));
 						} else if("unlog" == cmd) {
 							msg.cmd = Msg::kCmdStopLogging;
-							msg.arg = timestamp;
+							msg.args[0] = timestamp;
 						} else if ("monitor" == cmd) {
 							if(n < periods.size())
 							{
@@ -605,6 +624,7 @@ private:
 	std::vector<Priv*> vec;
 	float sampleRate = 0;
 	Gui& gui;
+	bool clientActive = true;
 };
 
 WatcherManager* Bela_getDefaultWatcherManager();
