@@ -267,7 +267,7 @@ bool BelaArduino_setup(BelaContext* context)
 	belaArduinoPipe.setup("BelaArduino");
 	ArduinoSetup();
 	processPipe();
-	arduinoLoopTask = Bela_createAuxiliaryTask(ArduinoLoop, 94, "ArduinoLoop");
+	arduinoLoopTask = Bela_createAuxiliaryTask(ArduinoLoop, 0, "ArduinoLoop");
 	return true;
 }
 
