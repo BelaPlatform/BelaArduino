@@ -98,45 +98,84 @@ function analogOutSendValues() {
   }
 }
 
+let guiPollsAndUsesList = true;
+let listIntervalHdl;
+let list;
+let streamWatchers = [];
+let monitorWatchers = [];
+
+function pollBackend() {
+  clearInterval(listIntervalHdl);
+  console.log("start poll");
+  listIntervalHdl = setInterval(() => {
+    console.log("do poll", clientActive);
+    if(!clientActive)
+      return;
+    // request another update ("list") for all variables.
+    Watcher.sendCommand({ cmd: "list" }, true)
+    if(scopes.length) {
+      // also request enough frames of the audio
+      // channels to draw one "scope" worth.
+      Watcher.sendCommand({
+        cmd: "watch",
+        watchers: streamWatchers,
+        durations: Array(streamWatchers.length).fill(scopes[0].w),
+      }, true);
+    }
+  }, 100);
+}
+
 function controlCallback(data) {
   if(!data.watcher)
     return;
-  console.log(data.watcher);
   if(data.watcher.watchers) {
-    loopbackDemo = false; // now we are being serious
     let watchers = data.watcher.watchers;
-    Watcher.processList(watchers); // so that parseBuffers() works
-    nGpios = howMany("digital", watchers) ? 16 : 0;
-    nAnalogIn = howMany("analogIn", watchers);
-    nAnalogOut = howMany("analogOut", watchers);
-    nAudioIn = howMany("audioIn", watchers);
-    nAudioOut = howMany("audioOut", watchers);
-    setupGuis(false);
-
-    let monitorWatchers = Array();
-    let monitorPeriods = Array();
-    let streamWatchers = Array();
-    for(let n = 0; n < watchers.length; ++n) {
-      let w = watchers[n].name;
-      if(0 == w.search(/^audio[IO]/)) {
-        streamWatchers.push(w);
-      } else {
-        // scatter updates over time so to minimise chances of dropped blocks.
-        // TODO: once the backend becomes less resource-intensive when sending
-        // data, remove this.
-        monitorWatchers.push(w);
-        monitorPeriods.push(3000 + monitorWatchers.length * 64);
+    list = data.watcher.watchers;
+    if(loopbackDemo) {
+      console.log(data.watcher);
+      // first time we receive a response to list: generate GUI
+      loopbackDemo = false; // now we are being serious
+      Watcher.processList(watchers); // so that parseBuffers() works
+      nGpios = howMany("digital", watchers) ? 16 : 0;
+      nAnalogIn = howMany("analogIn", watchers);
+      nAnalogOut = howMany("analogOut", watchers);
+      nAudioIn = howMany("audioIn", watchers);
+      nAudioOut = howMany("audioOut", watchers);
+      monitorWatchers = [];
+      streamWatchers = [];
+      for(let n = 0; n < watchers.length; ++n) {
+        let w = watchers[n].name;
+        if(0 == w.search(/^audio[IO]/)) {
+          streamWatchers.push(w);
+        } else {
+          monitorWatchers.push(w);
+        }
       }
+      setupGuis();
+      if(guiPollsAndUsesList)
+        pollBackend();
     }
-    Watcher.sendCommand({
-      cmd: "monitor",
-      watchers: monitorWatchers,
-      periods: monitorPeriods,
-    });
-    Watcher.sendCommand({
-      cmd: "watch",
-      watchers: streamWatchers,
-    });
+    if(guiPollsAndUsesList) {
+    } else {
+      // we schedule the server to "monitor" (i.e.: send regular updates)
+      // for all variables except audio, which we want to "watch" (i.e.: stream
+      // continuosly), scatter updates over time so to minimise chances of
+      // dropped blocks.
+      // TODO: once the backend becomes less resource-intensive when sending
+      // data, remove this.
+      let monitorPeriods = Array();
+      for(let n = 0; n < monitorWatchers.length; ++n)
+        monitorPeriods.push(3000 + n * 64);
+      Watcher.sendCommand({
+        cmd: "monitor",
+        watchers: monitorWatchers,
+        periods: monitorPeriods,
+      });
+      Watcher.sendCommand({
+        cmd: "watch",
+        watchers: streamWatchers,
+      });
+    }
   } else console.log(data.watcher);
 }
 
@@ -144,7 +183,7 @@ function processValues() {
   let inBufs = Bela.data.buffers;
   if(!inBufs.length)
     return;
-  let buffers = Watcher.parseBuffers(inBufs);
+  let buffers = Watcher.parseInputData(inBufs, list, guiPollsAndUsesList);
   for(let n = 0; n < buffers.length; ++n) {
     let buf = buffers[n];
     let w = buf.watcher;

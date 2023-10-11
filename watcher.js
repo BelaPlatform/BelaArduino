@@ -1,9 +1,10 @@
 let Watcher = {
-  sendCommand: (cmd) => {
+  sendCommand: (cmd, quiet) => {
     let obj = {
       watcher: Array.isArray(cmd) ? cmd : [ cmd ],
     };
-    console.log("Sending", obj);
+    if(!quiet)
+      console.log("Sending", obj);
     Bela.control.send(obj);
   },
   requestList: () => {
@@ -20,12 +21,21 @@ let Watcher = {
       return v.name;
     });
   },
-  parseBuffers: (buffers) => {
+  parseInputData: (buffers, list, useList) => {
     if(!buffers)
       return;
     let retBufs = Array();
     for(let k = 0; k < buffers.length; ++k)
     {
+      if(useList) {
+        // Bela.data.buffers have been populated only by the audio watched variables
+        // everything else we have to set here
+        retBufs.push({
+          timestamp: list.timestamp,
+          buf: [ list[k].valueInput ],
+          watcher: this.watchers[k],
+        });
+      }
       if(!buffers[k])
         continue;
       let timestampBuf;
