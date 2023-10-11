@@ -19,6 +19,7 @@ public:
 		}
 	}
 	virtual double wmGet() = 0;
+	virtual double wmGetInput() = 0;
 	virtual void wmSet(double) = 0;
 	virtual void wmSetMask(unsigned int, unsigned int) = 0;
 	virtual void localControlChanged() {}
@@ -113,16 +114,19 @@ static inline double JSONGetNumber(JSONValue* el, const std::string& key)
 	return _JSONGetNumber(el, wkey);
 }
 
+#include <thread>
 class WatcherManager
 {
 	static constexpr uint32_t kMonitorDont = 0;
 	static constexpr uint32_t kMonitorChange = 1 << 31;
 	typedef uint64_t AbsTimestamp;
 	typedef uint32_t RelTimestamp;
+	std::thread pipeToJsonThread;
 	AbsTimestamp timestamp = 0;
 	size_t pipeReceivedRt = 0;
 	size_t pipeSentNonRt = 0;
 	Pipe pipe;
+	volatile bool shouldStop;
 	static constexpr size_t kMsgHeaderLength = sizeof(timestamp);
 	static_assert(0 == kMsgHeaderLength % sizeof(float), "has to be multiple");
 	static constexpr size_t kBufSize = 4096 + kMsgHeaderLength;
@@ -141,7 +145,15 @@ public:
 			this->controlCallback(json);
 			return true;
 		});
+		pipe.setTimeoutMsNonRt(100);
+		shouldStop = false;
+		pipeToJsonThread = std::thread(&WatcherManager::pipeToJson, this);
 	};
+	~WatcherManager()
+	{
+		shouldStop = true;
+		pipeToJsonThread.join();
+	}
 	void setup(float sampleRate)
 	{
 		this->sampleRate = sampleRate;
@@ -166,12 +178,7 @@ public:
 			.relTimestampsOffset = getRelTimestampsOffset(sizeof(T)),
 			.countRelTimestamps = 0,
 			.monitoring = kMonitorDont,
-			.logEventTimestamp = -1u,
-			.logEventTimestampEnd = -1u,
-			.watched = false,
 			.controlled = false,
-			.logged = kLoggedNo,
-			.hasLogged = false,
 		});
 		Priv* p = vec.back();
 		p->v.resize(kBufSize); // how do we include this above?
@@ -195,19 +202,25 @@ public:
 		timestamp = frames;
 		while(pipeReceivedRt != pipeSentNonRt)
 		{
-			Msg msg;
+			MsgToRt msg;
 			if(1 == pipe.readRt(msg))
 			{
 				pipeReceivedRt++;
 				switch(msg.cmd)
 				{
-					case Msg::kCmdStartLogging:
+					case MsgToRt::kCmdStartLogging:
 						startLogging(msg.priv, msg.args[0], msg.args[1]);
 						break;
-					case Msg::kCmdStopLogging:
+					case MsgToRt::kCmdStopLogging:
 						stopLogging(msg.priv, msg.args[0]);
 						break;
-					case Msg::kCmdNone:
+					case MsgToRt::kCmdStartWatching:
+						startWatching(msg.priv, msg.args[0], msg.args[1]);
+						break;
+					case MsgToRt::kCmdStopWatching:
+						stopWatching(msg.priv, msg.args[0]);
+						break;
+					case MsgToRt::kCmdNone:
 						break;
 				}
 			} else {
@@ -225,25 +238,32 @@ public:
 		Priv* p = reinterpret_cast<Priv*>(d);
 		if(!p)
 			return;
-		if(timestamp >= p->logEventTimestamp)
+		bool streamLast = false;
+		for(auto& stream : p->streams)
 		{
-			p->logEventTimestamp = -1;
-			if(kLoggedStarting == p->logged)
+		if(timestamp >= stream.schedTsStart)
+		{
+			stream.schedTsStart = -1;
+			if(kStreamStateStarting == stream.state)
 			{
-				p->logged = kLoggedYes;
+				stream.state = kStreamStateYes;
 				// TODO: watching and logging use the same buffer,
 				// so you'll get a dropout in the watching if you
 				// are watching right now
 				p->count = 0;
-				if(-1 != p->logEventTimestampEnd) {
+				if(-1 != stream.schedTsEnd) {
 					// if an end timestamp is provided,
 					// schedule the end immediately
-					p->logEventTimestamp = p->logEventTimestampEnd;
-					p->logged = kLoggedStopping;
+					stream.schedTsStart = stream.schedTsEnd;
+					stream.state = kStreamStateStopping;
 				}
 			}
-			else if(kLoggedStopping == p->logged)
-				p->logged = kLoggedLast;
+			else if(kStreamStateStopping == stream.state)
+			{
+				stream.state = kStreamStateLast;
+				streamLast = true;
+			}
+		}
 		}
 		if(kMonitorDont != p->monitoring)
 		{
@@ -278,7 +298,7 @@ public:
 					p->monitoringNext = timestamp + p->monitoring;
 			}
 		}
-		if((p->watched && clientActive) || isLogging(p))
+		if((isStreaming(p, kStreamIdxWatch) && clientActive) || isStreaming(p, kStreamIdxLog))
 		{
 			if(0 == p->count)
 			{
@@ -303,9 +323,9 @@ public:
 				// only one array of type T starting at
 				// kMsgHeaderLength
 			}
-			if(full || kLoggedLast == p->logged)
+			if(full || streamLast)
 			{
-				if(kLoggedLast == p->logged && !full)
+				if(!full)
 				{
 					// when logging stops, we need to fill
 					// up all the remaining space with zeros
@@ -327,10 +347,15 @@ public:
 				// header
 
 				send<T>(p);
-				if(kLoggedLast == p->logged)
+				for(size_t n = 0; n < p->streams.size(); ++n)
 				{
-					p->logger->requestFlush();
-					p->logged = kLoggedNo;
+					Stream& stream = p->streams[n];
+					if(kStreamStateLast == stream.state)
+					{
+						if(kStreamIdxLog == n)
+							p->logger->requestFlush();
+						stream.state = kStreamStateNo;
+					}
 				}
 				p->count = 0;
 			}
@@ -340,12 +365,22 @@ public:
 		return gui;
 	}
 private:
-	enum Logged {
-		kLoggedNo,
-		kLoggedStarting,
-		kLoggedYes,
-		kLoggedStopping,
-		kLoggedLast,
+	enum StreamIdx {
+		kStreamIdxLog,
+		kStreamIdxWatch,
+		kStreamIdxNum,
+	};
+	enum StreamState {
+		kStreamStateNo,
+		kStreamStateStarting,
+		kStreamStateYes,
+		kStreamStateStopping,
+		kStreamStateLast,
+	};
+	struct Stream {
+		AbsTimestamp schedTsStart = -1;
+		AbsTimestamp schedTsEnd = -1;
+		StreamState state = kStreamStateNo;
 	};
 	struct Priv {
 		WatcherBase* w;
@@ -363,45 +398,72 @@ private:
 		size_t maxCount;
 		uint32_t monitoring;
 		AbsTimestamp monitoringNext;
-		AbsTimestamp logEventTimestamp;
-		AbsTimestamp logEventTimestampEnd;
-		bool watched;
+		std::array<Stream,kStreamIdxNum> streams;
 		bool controlled;
-		Logged logged;
-		bool hasLogged;
 	};
-	struct Msg {
+	struct MsgToNrt {
+		Priv* priv;
+		enum Cmd {
+			kCmdNone,
+			kCmdStartedLogging,
+		} cmd;
+		uint64_t args[2];
+	};
+	struct MsgToRt {
 		Priv* priv;
 		enum Cmd {
 			kCmdNone,
 			kCmdStartLogging,
 			kCmdStopLogging,
+			kCmdStartWatching,
+			kCmdStopWatching,
 		} cmd;
 		uint64_t args[2];
 	};
-	bool isLogging(const Priv* p) const
+	void pipeToJson()
 	{
-		return p->logger && (kLoggedYes == p->logged || kLoggedStopping == p->logged || kLoggedLast == p->logged);
+		while(!shouldStop)
+		{
+			struct MsgToNrt msg;
+			if(1 == pipe.readNonRt(msg))
+			{
+				switch(msg.cmd)
+				{
+					case MsgToNrt::kCmdStartedLogging:
+					{
+						JSONObject watcher;
+						watcher[L"watcher"] = new JSONValue(JSON::s2ws(msg.priv->name));
+						watcher[L"logFileName"] = new JSONValue(JSON::s2ws(msg.priv->logFileName));
+						watcher[L"timestamp"] = new JSONValue(double(msg.args[0]));
+						watcher[L"timestampEnd"] = new JSONValue(double(msg.args[1]));
+						sendJsonResponse(new JSONValue(watcher), WSServer::kThreadOther);
+					}
+						break;
+					case MsgToNrt::kCmdNone:
+						break;
+				}
+			}
+		}
+	}
+	bool isStreaming(const Priv* p, StreamIdx idx) const
+	{
+		StreamState state = p->streams[idx].state;
+		return kStreamStateYes == state || kStreamStateStopping == state|| kStreamStateLast == state;
 	}
 	template <typename T>
 	void send(Priv* p) {
 		size_t size = p->v.size(); // TODO: customise this for smaller frames
-		if(clientActive && p->watched)
+		if(clientActive && isStreaming(p, kStreamIdxWatch))
 			gui.sendBuffer(p->guiBufferId, (T*)p->v.data(), size / sizeof(T));
-		if(isLogging(p))
+		if(isStreaming(p, kStreamIdxLog))
 			p->logger->log((float*)p->v.data(), size / sizeof(float));
 	}
-	void startWatching(Priv* p) {
-		if(p->watched)
-			return;
-		p->watched = true;
-		p->count = 0;
+	void startWatching(Priv* p, AbsTimestamp startTimestamp, AbsTimestamp duration) {
+		startStreamAtFor(p, kStreamIdxWatch, startTimestamp, duration);
 		// TODO: register guiBufferId here
 	}
-	void stopWatching(Priv* p) {
-		if(!p->watched)
-			return;
-		p->watched = false;
+	void stopWatching(Priv* p, AbsTimestamp timestampEnd) {
+		stopStreamAt(p, kStreamIdxWatch, timestampEnd);
 		// TODO: unregister guiBufferId here
 	}
 	void startControlling(Priv* p) {
@@ -416,21 +478,43 @@ private:
 		p->controlled = false;
 		p->w->localControl(true);
 	}
-	void startLogging(Priv* p, AbsTimestamp timestamp, AbsTimestamp timestampEnd) {
-		if(kLoggedNo != p->logged)
+	void startStreamAtFor(Priv* p, StreamIdx idx, AbsTimestamp startTimestamp, AbsTimestamp duration) {
+		Stream& stream = p->streams[idx];
+		if(kStreamStateNo != stream.state)
 			return;
-		p->logged = kLoggedStarting;
-		p->logEventTimestamp = timestamp;
-		if(timestampEnd <= timestamp)
-			timestampEnd = -1; // invalid
-		p->logEventTimestampEnd = timestampEnd;
-		p->hasLogged = true;
+		stream.state = kStreamStateStarting;
+		if(startTimestamp < timestamp)
+			startTimestamp = timestamp;
+		stream.schedTsStart = startTimestamp;
+		AbsTimestamp timestampEnd = startTimestamp + duration;
+		if(0 == duration)
+			timestampEnd = -1; // do not stop automatically
+		stream.schedTsEnd = timestampEnd;
+		if(kStreamIdxLog == idx) {
+			// send a response with the actual timestamps
+			MsgToNrt msg {
+				.priv = p,
+				.cmd = MsgToNrt::kCmdStartedLogging,
+				.args = {
+					startTimestamp,
+					timestampEnd,
+				},
+			};
+			pipe.writeRt(msg);
+		}
+	}
+	void stopStreamAt(Priv* p, StreamIdx idx, AbsTimestamp timestampEnd) {
+		Stream& stream = p->streams[idx];
+		if(kStreamStateNo == stream.state)
+			return;
+		stream.state = kStreamStateStopping;
+		stream.schedTsStart = timestampEnd;
+	}
+	void startLogging(Priv* p, AbsTimestamp startTimestamp, AbsTimestamp duration) {
+		startStreamAtFor(p, kStreamIdxLog, startTimestamp, duration);
 	}
 	void stopLogging(Priv* p, AbsTimestamp timestamp) {
-		if(kLoggedNo == p->logged)
-			return;
-		p->logged = kLoggedStopping;
-		p->logEventTimestamp = timestamp;
+		stopStreamAt(p, kStreamIdxLog, timestamp);
 	}
 	void setMonitoring(Priv* p, size_t period) {
 		p->monitoring = (kMonitorChange | period);
@@ -464,8 +548,7 @@ private:
 	void cleanupLogger(Priv* p) {
 		if(!p || !p->logger)
 			return;
-		bool shouldDiscard = !p->hasLogged;
-		p->logger->cleanup(shouldDiscard);
+		p->logger->cleanup(false);
 		delete p->logger;
 		p->logger = nullptr;
 	}
@@ -479,13 +562,13 @@ private:
 		else
 			return nullptr;
 	}
-	void sendJsonResponse(JSONValue* watcher)
+	void sendJsonResponse(JSONValue* watcher, WSServer::CallingThread thread)
 	{
 		// should be called from the controlCallback() thread
 		JSONObject root;
 		root[L"watcher"] = watcher;
 		JSONValue value(root);
-		gui.sendControl(&value, WSServer::kThreadCallback);
+		gui.sendControl(&value, thread);
 	}
 	bool controlCallback(JSONObject& root) {
 		auto watcher = JSONGetArray(root, "watcher");
@@ -502,12 +585,13 @@ private:
 					auto& v = *item;
 					JSONObject watcher;
 					watcher[L"name"] = new JSONValue(JSON::s2ws(v.name));
-					watcher[L"watched"] = new JSONValue(v.watched);
+					watcher[L"watched"] = new JSONValue(isStreaming(&v, kStreamIdxWatch));
 					watcher[L"controlled"] = new JSONValue(v.controlled);
-					watcher[L"logged"] = new JSONValue(v.logged);
+					watcher[L"logged"] = new JSONValue(isStreaming(&v, kStreamIdxLog));
 					watcher[L"monitor"] = new JSONValue(int((~kMonitorChange) & v.monitoring));
 					watcher[L"logFileName"] = new JSONValue(JSON::s2ws(v.logFileName));
 					watcher[L"value"] = new JSONValue(v.w->wmGet());
+					watcher[L"valueInput"] = new JSONValue(v.w->wmGetInput());
 					watcher[L"type"] = new JSONValue(JSON::s2ws(v.type));
 					watcher[L"timestampMode"] = new JSONValue(v.timestampMode);
 					watchers.emplace_back(new JSONValue(watcher));
@@ -516,52 +600,54 @@ private:
 				watcher[L"watchers"] = new JSONValue(watchers);
 				watcher[L"sampleRate"] = new JSONValue(float(sampleRate));
 				watcher[L"timestamp"] = new JSONValue(double(timestamp));
-				sendJsonResponse(new JSONValue(watcher));
+				sendJsonResponse(new JSONValue(watcher), WSServer::kThreadCallback);
 			} else
 			if("watch" == cmd || "unwatch" == cmd || "control" == cmd || "uncontrol" == cmd || "log" == cmd || "unlog" == cmd || "monitor" == cmd) {
 				const JSONArray& watchers = JSONGetArray(el, "watchers");
 				const JSONArray& periods = JSONGetArray(el, "periods"); // used only by 'monitor'
 				const JSONArray& timestamps = JSONGetArray(el, "timestamps"); // used only by some commands
-				const JSONArray& timestampsEnd = JSONGetArray(el, "timestampsEnd"); // used only by some commands
+				const JSONArray& durations = JSONGetArray(el, "durations"); // used only by some commands
 				size_t numSent = 0;
 				for(size_t n = 0; n < watchers.size(); ++n)
 				{
 					std::string str = JSONGetAsString(watchers[n]);
 					Priv* p = findPrivByName(str);
+#ifdef WATCHER_PRINT
 					printf("%s {'%s', %p}, ", cmd.c_str(), str.c_str(), p);
+#endif // WATCHER_PRINT
 					if(p)
 					{
 						AbsTimestamp timestamp = 0;
-						AbsTimestamp timestampEnd = -1;
-						Msg msg {
+						AbsTimestamp duration = 0;
+						MsgToRt msg {
 							.priv = p,
-							.cmd = Msg::kCmdNone,
+							.cmd = MsgToRt::kCmdNone,
 						};
 						if(n < timestamps.size())
 							timestamp = JSONGetAsNumber(timestamps[n]);
-						if(n < timestampsEnd.size())
-							timestampEnd = JSONGetAsNumber(timestampsEnd[n]);
-						if("watch" == cmd)
-							startWatching(p);
-						else if("unwatch" == cmd)
-							stopWatching(p);
+						if(n < durations.size())
+							duration = JSONGetAsNumber(durations[n]);
+						if("watch" == cmd) {
+							msg.cmd = MsgToRt::kCmdStartWatching;
+							msg.args[0] = timestamp;
+							msg.args[1] = duration;
+						} else if("unwatch" == cmd) {
+							msg.cmd = MsgToRt::kCmdStopWatching;
+							msg.args[0] = timestamp;
+						}
 						else if("control" == cmd)
 							startControlling(p);
 						else if("uncontrol" == cmd)
 							stopControlling(p);
 						else if("log" == cmd) {
-							if(isLogging(p))
+							if(isStreaming(p, kStreamIdxLog))
 								continue;
-							msg.cmd = Msg::kCmdStartLogging;
+							msg.cmd = MsgToRt::kCmdStartLogging;
 							msg.args[0] = timestamp;
-							msg.args[1] = timestampEnd;
+							msg.args[1] = duration;
 							setupLogger(p);
-							JSONObject watcher;
-							watcher[L"watcher"] = new JSONValue(JSON::s2ws(str));
-							watcher[L"logFileName"] = new JSONValue(JSON::s2ws(p->logFileName));
-							sendJsonResponse(new JSONValue(watcher));
 						} else if("unlog" == cmd) {
-							msg.cmd = Msg::kCmdStopLogging;
+							msg.cmd = MsgToRt::kCmdStopLogging;
 							msg.args[0] = timestamp;
 						} else if ("monitor" == cmd) {
 							if(n < periods.size())
@@ -573,14 +659,16 @@ private:
 								break;
 							}
 						}
-						if(Msg::kCmdNone != msg.cmd)
+						if(MsgToRt::kCmdNone != msg.cmd)
 						{
 							pipe.writeNonRt(msg);
 							numSent++;
 						}
 					}
 				}
+#ifdef WATCHER_PRINT
 				printf("\n");
+#endif // WATCHER_PRINT
 				if(numSent)
 				{
 					// this full memory barrier may be
@@ -657,6 +745,9 @@ public:
 	double wmGet() override
 	{
 		return get();
+	}
+	double wmGetInput() override {
+		return v;
 	}
 	void wmSet(double value) override
 	{
