@@ -58,7 +58,7 @@ function digitalSendValues() {
   // https://stackoverflow.com/questions/11703599/unsigned-32-bit-integers-in-javascript#comment133608159_11704904
   let value = lowWord + (highWord * (1 << nGpios));
   let mask = digitalMask + (digitalMask * (1 << nGpios));
-  console.log("sending 0x" + value.toString(16));
+  console.log("sending 0x" + (value.toString(16).padStart(8, '0')) + " 0x" + (mask.toString(16).padStart(8, '0')));
   Watcher.sendCommand({
     cmd: "setMask",
     watchers: ["digital"],
