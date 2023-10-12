@@ -121,6 +121,7 @@ class WatcherManager
 	static constexpr uint32_t kMonitorChange = 1 << 31;
 	typedef uint64_t AbsTimestamp;
 	typedef uint32_t RelTimestamp;
+	struct Priv;
 	std::thread pipeToJsonThread;
 	AbsTimestamp timestamp = 0;
 	size_t pipeReceivedRt = 0;
@@ -185,6 +186,7 @@ public:
 		if(((uintptr_t)p->v.data() + kMsgHeaderLength) & (sizeof(T) - 1))
 			throw(std::bad_alloc());
 		p->maxCount = kTimestampBlock == p->timestampMode ? p->v.size() : p->relTimestampsOffset - (sizeof(T) - 1);
+		updateSometingToDo(p);
 		return (Details*)vec.back();
 	}
 	void unreg(WatcherBase* that)
@@ -197,9 +199,11 @@ public:
 		delete *it;
 		vec.erase(it);
 	}
-	void tick(AbsTimestamp frames)
+	void tick(AbsTimestamp frames, bool full = true)
 	{
 		timestamp = frames;
+		if(!full)
+			return;
 		while(pipeReceivedRt != pipeSentNonRt)
 		{
 			MsgToRt msg;
@@ -230,6 +234,20 @@ public:
 		}
 		clientActive = gui.numActiveConnections();
 	}
+	void updateSometingToDo(Priv* p, bool should = false)
+	{
+		for(auto& stream : p->streams)
+		{
+			should |= (stream.schedTsStart != -1);
+			should |= stream.state;
+		}
+		should |= (kMonitorDont != p->monitoring);
+		// TODO: is watching should be conditional to && clientActive,
+		// but for that to work, we'd need to call this for each client
+		// on clientActive change, which could be very expensive
+		should |= (isStreaming(p, kStreamIdxWatch)) || isStreaming(p, kStreamIdxLog);
+		p->somethingToDo = should;
+	}
 	// the relevant object is passed back here so that we don't have to waste
 	// time looking it up
 	template <typename T>
@@ -238,32 +256,35 @@ public:
 		Priv* p = reinterpret_cast<Priv*>(d);
 		if(!p)
 			return;
+		if(!p->somethingToDo)
+			return;
 		bool streamLast = false;
 		for(auto& stream : p->streams)
 		{
-		if(timestamp >= stream.schedTsStart)
-		{
-			stream.schedTsStart = -1;
-			if(kStreamStateStarting == stream.state)
+			if(timestamp >= stream.schedTsStart)
 			{
-				stream.state = kStreamStateYes;
-				// TODO: watching and logging use the same buffer,
-				// so you'll get a dropout in the watching if you
-				// are watching right now
-				p->count = 0;
-				if(-1 != stream.schedTsEnd) {
-					// if an end timestamp is provided,
-					// schedule the end immediately
-					stream.schedTsStart = stream.schedTsEnd;
-					stream.state = kStreamStateStopping;
+				stream.schedTsStart = -1;
+				if(kStreamStateStarting == stream.state)
+				{
+					stream.state = kStreamStateYes;
+					// TODO: watching and logging use the same buffer,
+					// so you'll get a dropout in the watching if you
+					// are watching right now
+					p->count = 0;
+					if(-1 != stream.schedTsEnd) {
+						// if an end timestamp is provided,
+						// schedule the end immediately
+						stream.schedTsStart = stream.schedTsEnd;
+						stream.state = kStreamStateStopping;
+					}
 				}
+				else if(kStreamStateStopping == stream.state)
+				{
+					stream.state = kStreamStateLast;
+					streamLast = true;
+				}
+				updateSometingToDo(p);
 			}
-			else if(kStreamStateStopping == stream.state)
-			{
-				stream.state = kStreamStateLast;
-				streamLast = true;
-			}
-		}
 		}
 		if(kMonitorDont != p->monitoring)
 		{
@@ -294,6 +315,7 @@ public:
 					// special case: one-shot
 					// so disable at the next iteration
 					p->monitoring = kMonitorChange | 0;
+					updateSometingToDo(p);
 				} else
 					p->monitoringNext = timestamp + p->monitoring;
 			}
@@ -347,6 +369,7 @@ public:
 				// header
 
 				send<T>(p);
+				bool shouldUpdate = false;
 				for(size_t n = 0; n < p->streams.size(); ++n)
 				{
 					Stream& stream = p->streams[n];
@@ -355,8 +378,11 @@ public:
 						if(kStreamIdxLog == n)
 							p->logger->requestFlush();
 						stream.state = kStreamStateNo;
+						shouldUpdate = true;
 					}
 				}
+				if(shouldUpdate)
+					updateSometingToDo(p);
 				p->count = 0;
 			}
 		}
@@ -400,6 +426,7 @@ private:
 		AbsTimestamp monitoringNext;
 		std::array<Stream,kStreamIdxNum> streams;
 		bool controlled;
+		bool somethingToDo;
 	};
 	struct MsgToNrt {
 		Priv* priv;
@@ -480,8 +507,6 @@ private:
 	}
 	void startStreamAtFor(Priv* p, StreamIdx idx, AbsTimestamp startTimestamp, AbsTimestamp duration) {
 		Stream& stream = p->streams[idx];
-		if(kStreamStateNo != stream.state)
-			return;
 		stream.state = kStreamStateStarting;
 		if(startTimestamp < timestamp)
 			startTimestamp = timestamp;
@@ -502,6 +527,7 @@ private:
 			};
 			pipe.writeRt(msg);
 		}
+		updateSometingToDo(p, true);
 	}
 	void stopStreamAt(Priv* p, StreamIdx idx, AbsTimestamp timestampEnd) {
 		Stream& stream = p->streams[idx];
@@ -509,6 +535,7 @@ private:
 			return;
 		stream.state = kStreamStateStopping;
 		stream.schedTsStart = timestampEnd;
+		updateSometingToDo(p, true);
 	}
 	void startLogging(Priv* p, AbsTimestamp startTimestamp, AbsTimestamp duration) {
 		startStreamAtFor(p, kStreamIdxLog, startTimestamp, duration);
@@ -518,6 +545,7 @@ private:
 	}
 	void setMonitoring(Priv* p, size_t period) {
 		p->monitoring = (kMonitorChange | period);
+		p->somethingToDo = true; // TODO: race condition
 	}
 	void setupLogger(Priv* p) {
 		cleanupLogger(p);
