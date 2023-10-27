@@ -1,6 +1,7 @@
 #include "BelaArduino.h"
 #include "BelaMsg.h"
 #include "Arduino.h"
+#include "PdArduino.h"
 #include <Bela.h>
 #define ENABLE_WATCHER
 #define ENABLE_GUI
@@ -127,18 +128,38 @@ static void ArduinoSetup()
 {
 	setup();
 }
+
+static BelaMsgParser nonRtParser(belaArduinoPipe, false);
 static void ArduinoLoop(void*)
 {
 	while(!Bela_stopRequested())
+	{
+		if(pdReceiveMsg)
+		{
+			BelaMsgParser::Parsed& p = nonRtParser.process();
+			if(p.good)
+			{
+				// TODO: retrieve data and call pdReceiveMsg()
+			}
+		}
 		loop();
+	}
+}
+void msgSendToArduino(const char* str, const float* vals, size_t count)
+{
+	BelaSourceThread t = kBelaSourceThreadAudio;
+	msgInit(t, kBelaReceiverArduino, count + 1);
+	msgAddFS(t, str);
+	for(size_t n = 0; n < count; ++n)
+		msgAdd(t, vals[n]);
+	msgSend(t);
 }
 static AuxiliaryTask arduinoLoopTask;
 
-#include "PdArduino.h"
 void BelaArduino_floatHook(float value)
 {
 	if(pdReceiveMsg)
-		pdReceiveMsg("float", &value, 1);
+		msgSendToArduino("float", &value, 1);
 }
 
 void BelaArduino_listHook(int argc, t_atom *argv)
@@ -157,44 +178,24 @@ void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv)
 			payload[n] = -1;
 	}
 	if(pdReceiveMsg)
-		pdReceiveMsg(symbol, payload, argc);
+		msgSendToArduino(symbol, payload, argc);
 }
 
 static std::vector<char> selector(1000);
 static std::vector<char> type(1000);
+static BelaMsgParser rtParser(belaArduinoPipe, true);
 void processPipe()
 {
-	static enum WaitingFor {
-		kHeader,
-		kPayload
-	} waitingFor = kHeader;
-	static size_t size;
 	while(1) // breaks when no data is available right now
 	{
-		if(kHeader == waitingFor)
-		{
-			// The header is a size_t containing the message size
-			if(1 == belaArduinoPipe.readRt(size))
-				waitingFor = kPayload;
-			else
-				break;
-		}
-		if(kPayload == waitingFor)
-		{
-			// the message is:
-			// 1 byte: n of tags
-			// 1 byte: id of receiver
-			// n tags
-			// n arguments (without padding, possibly unaligned)
-			uint8_t msg[size];;
-			int ret;
-			if((ret = belaArduinoPipe.readRt(msg, size)) != size)
-				break;
-			waitingFor = kHeader;
-			uint8_t numTags = msg[0];
-			BelaReceiver rec = BelaReceiver(msg[1]);
-			const uint8_t* tags = msg + kMsgPreHeader;
-			uint8_t nextArg = kMsgPreHeader + numTags;
+		BelaMsgParser::Parsed& p = rtParser.process();
+		if(!p.good)
+			break;
+		uint8_t* msg = p.msg.data();
+		const uint8_t* tags = p.tags;
+		uint8_t numTags = p.numTags;
+		uint8_t nextArg = p.nextArg;
+		BelaReceiver rec = p.rec;
 			// fixed-type messages first
 			if(kBelaReceiverShiftOut == rec)
 			{
@@ -277,7 +278,6 @@ void processPipe()
 				else
 					libpd_finish_message(selector.data(), type.data());
 			}
-		}
 	}
 }
 

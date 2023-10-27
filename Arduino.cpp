@@ -102,11 +102,11 @@ void interrupts() {}
 
 void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin, uint8_t bitOrder, uint8_t numBits, uint32_t origBits)
 {
-	msgInit(kBelaReceiverShiftOut, 5);
-	msgAdd(dataPin);
-	msgAdd(clockPin);
-	msgAdd(latchPin);
-	msgAdd(numBits);
+	msgInit(kBelaSourceThreadArduino, kBelaReceiverShiftOut, 5);
+	msgAdd(kBelaSourceThreadArduino, dataPin);
+	msgAdd(kBelaSourceThreadArduino, clockPin);
+	msgAdd(kBelaSourceThreadArduino, latchPin);
+	msgAdd(kBelaSourceThreadArduino, numBits);
 	uint32_t bits;
 	if(MSBFIRST == bitOrder)
 	{
@@ -119,6 +119,6 @@ void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin, uint8_t bitOr
 		}
 	} else
 		bits = origBits;
-	msgAdd(bits);
-	msgSend();
+	msgAdd(kBelaSourceThreadArduino, bits);
+	msgSend(kBelaSourceThreadArduino);
 }

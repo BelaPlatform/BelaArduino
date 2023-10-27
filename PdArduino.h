@@ -9,5 +9,5 @@ void pdReceiveMsg(const char*, float*, unsigned int);
 template <typename... Ts>
 void pdSendMessage(const Ts&... varargs)
 {
-	belaMsgSend(kBelaReceiverPd, varargs...);
+	belaMsgSend(kBelaSourceThreadArduino, kBelaReceiverPd, varargs...);
 }
