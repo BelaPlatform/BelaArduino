@@ -54,6 +54,9 @@ void digitalWrite(uint32_t, bool);
 void pwmWrite(uint32_t, float);
 float analogRead(uint32_t);
 void analogWrite(uint32_t, float);
+#define LSBFIRST 0
+#define MSBFIRST 1
+void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin, uint8_t bitOrder, uint8_t numBits, uint32_t val);
 
 typedef char __FlashStringHelper;
 #define strlen_P strlen

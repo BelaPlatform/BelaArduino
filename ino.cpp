@@ -8,6 +8,9 @@ void setup()
 	pinMode(1, OUTPUT);
 	pinMode(2, INPUT);
 	pinMode(3, OUTPUT);
+	pinMode(4, OUTPUT);
+	pinMode(5, OUTPUT);
+	pinMode(6, OUTPUT);
 	pdSendMessage("loadSound", 0, "kick.wav");
 	pdSendMessage("loadSound", 1, "snare.wav");
 }
@@ -15,6 +18,7 @@ void setup()
 void loop()
 {
 	static unsigned int count = 0;
+	shiftOut(4, 5, 6, LSBFIRST, 16, count);
 	float myArray[2];
 	myArray[1] = count & 1;
 	myArray[0] = count++;

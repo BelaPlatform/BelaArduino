@@ -4,6 +4,7 @@
 #include <Bela.h>
 #define ENABLE_WATCHER
 #define ENABLE_GUI
+#define ENABLE_SHIFTOUT
 #define WATCH_ONCE
 #define WATCH_AUDIO
 
@@ -14,6 +15,12 @@
 #include "Gui.h"
 Gui gui;
 #endif // ENABLE_GUI
+#ifdef ENABLE_SHIFTOUT
+#include <libraries/ShiftRegister/ShiftRegister.h>
+static ShiftRegisterOut shiftRegisterOut;
+static std::vector<bool> shiftOutBits(32);
+static bool shiftOutInProgress = false;
+#endif // ENABLE_SHIFTOUT
 
 #include <math.h>
 #include <array>
@@ -164,6 +171,27 @@ void processPipe()
 			BelaReceiver rec = BelaReceiver(msg[1]);
 			const uint8_t* tags = msg + kMsgPreHeader;
 			uint8_t nextArg = kMsgPreHeader + numTags;
+			// fixed-type messages first
+			if(kBelaReceiverShiftOut == rec)
+			{
+				if(strncmp((const char*)tags, "hhhhj", 5))
+					rt_fprintf(stderr, "shiftOut: malformed message\n");
+				ShiftRegister::Pins pins;
+				pins.data = *(msg + nextArg++);
+				pins.clock = *(msg + nextArg++);
+				pins.latch = *(msg + nextArg++);
+				size_t numBits = *(msg + nextArg++);
+				uint32_t bits;
+				memcpy(&bits, msg + nextArg, sizeof(bits));
+				shiftOutBits.resize(numBits);
+				for(size_t n = 0; n < shiftOutBits.size(); ++n)
+					shiftOutBits[n] = bits & (1 << n);
+				shiftRegisterOut.setup(pins, numBits);
+
+				shiftRegisterOut.setData(shiftOutBits);
+				shiftOutInProgress = true;
+				continue;
+			}
 			bool isList = false;
 			if(kBelaReceiverPd == rec)
 			{
@@ -231,6 +259,10 @@ void processPipe()
 
 bool BelaArduino_setup(BelaContext* context)
 {
+#ifdef ENABLE_SHIFTOUT
+	ShiftRegister::Pins pins {}; // dummy
+	shiftRegisterOut.setup(pins, shiftOutBits.size()); // preallocat
+#endif // ENABLE_SHIFTOUT
 	if((context->analogFrames && context->analogFrames != context->audioFrames) || (context->digitalFrames && context->digitalFrames != context->audioFrames))
 	{
 		fprintf(stderr, "Error: analog, audio and digital must have the same sampling rate\n");
@@ -372,6 +404,14 @@ void BelaArduino_renderBottom(BelaContext* context)
 		}
 	}
 	pwmClock = (pwmClock + context->digitalFrames) & (kPwmPeriod - 1);
+#ifdef ENABLE_SHIFTOUT
+	if(shiftOutInProgress)
+	{
+		shiftRegisterOut.process(context);
+		if(shiftRegisterOut.dataReady())
+			shiftOutInProgress = false;
+	}
+#endif // ENABLE_SHIFTOUT
 #ifdef ENABLE_WATCHER
 	if(gWatcherConnected)
 	{

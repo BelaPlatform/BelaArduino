@@ -1,5 +1,6 @@
 #include "BelaArduino.h"
 #include "Arduino.h" // has to come after BelaArduino because of the #define s it contains
+#include <BelaMsg.h>
 
 Print Serial;
 
@@ -98,3 +99,26 @@ void utoa(uint32_t num, char* dest, size_t len) {
 }
 void noInterrupts() {}
 void interrupts() {}
+
+void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin, uint8_t bitOrder, uint8_t numBits, uint32_t origBits)
+{
+	msgInit(kBelaReceiverShiftOut, 5);
+	msgAdd(dataPin);
+	msgAdd(clockPin);
+	msgAdd(latchPin);
+	msgAdd(numBits);
+	uint32_t bits;
+	if(MSBFIRST == bitOrder)
+	{
+		bits = 0;
+		// reverse bits
+		for(size_t n = 0; n < numBits; ++n)
+		{
+			bool bit = origBits & (1 << n);
+			bits |= bit << (numBits - 1 - n);
+		}
+	} else
+		bits = origBits;
+	msgAdd(bits);
+	msgSend();
+}
