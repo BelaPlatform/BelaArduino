@@ -1,6 +1,20 @@
 #include <Arduino.h>
 #include <PdArduino.h>
 
+void pdReceiveMsg(const char* symbol, float* data, size_t length)
+{
+	Serial.print("Received ");
+	Serial.print(symbol);
+	Serial.print("[");
+	Serial.print(length);
+	Serial.print("]:");
+	for(size_t n = 0; n < length; ++n)
+	{
+		Serial.print(" ");
+		Serial.print(data[n]);
+	}
+	Serial.println();
+}
 void setup()
 {
 	Serial.println("SETUP");
