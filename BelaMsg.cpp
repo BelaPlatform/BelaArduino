@@ -9,12 +9,13 @@ static std::vector<uint8_t> msgBuf(1000);
 static size_t msgDataPtr;
 static size_t msgHeaderPtr;
 
-void msgInit(size_t count)
+void msgInit(BelaReceiver rec, size_t count)
 {
-	msgDataPtr = count + 1;
+	msgDataPtr = count + kMsgPreHeader;
 	msgBuf.resize(msgDataPtr);
 	msgBuf[0] = count;
-	msgHeaderPtr = 1;
+	msgBuf[1] = rec;
+	msgHeaderPtr = kMsgPreHeader;
 }
 
 static void msgPush(char tag, const void* data, size_t size)

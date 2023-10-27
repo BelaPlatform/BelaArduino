@@ -152,15 +152,17 @@ void processPipe()
 		{
 			// the message is:
 			// 1 byte: n of tags
+			// 1 byte: id of receiver
 			// n tags
-			// arguments (without padding, possibly unaligned)
+			// n arguments (without padding, possibly unaligned)
 			uint8_t msg[size];;
 			int ret;
 			if((ret = belaArduinoPipe.readRt(msg, size)) != size)
 				break;
 			waitingFor = kHeader;
 			uint8_t numTags = msg[0];
-			const uint8_t* tags = msg + 1;
+			BelaReceiver rec = BelaReceiver(msg[1]);
+			const uint8_t* tags = msg + kMsgPreHeader;
 			if(numTags < 2 || 's' != tags[0])
 			{
 				rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
@@ -176,7 +178,7 @@ void processPipe()
 			if(isList)
 				numElements -= 1;
 			libpd_start_message(numElements);
-			uint8_t nextArg = 1 + numTags;
+			uint8_t nextArg = kMsgPreHeader + numTags;
 			for(size_t n = 0; n < numTags; ++n)
 			{
 				if('f' == tags[n])
