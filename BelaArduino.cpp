@@ -134,7 +134,31 @@ static void ArduinoLoop(void*)
 }
 static AuxiliaryTask arduinoLoopTask;
 
-#include <libraries/libpd/libpd.h>
+#include "PdArduino.h"
+void BelaArduino_floatHook(float value)
+{
+	if(pdReceiveMsg)
+		pdReceiveMsg("float", &value, 1);
+}
+
+void BelaArduino_listHook(int argc, t_atom *argv)
+{
+	BelaArduino_messageHook("list", argc, argv);
+}
+
+void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv)
+{
+	float payload[argc];
+	for(size_t n = 0; n < argc; ++n)
+	{
+		if(libpd_is_float(argv + n))
+			payload[n] = libpd_get_float(argv + n);
+		else
+			payload[n] = -1;
+	}
+	if(pdReceiveMsg)
+		pdReceiveMsg(symbol, payload, argc);
+}
 
 static std::vector<char> selector(1000);
 static std::vector<char> type(1000);
@@ -259,6 +283,7 @@ void processPipe()
 
 bool BelaArduino_setup(BelaContext* context)
 {
+	libpd_bind("bela_arduino");
 #ifdef ENABLE_SHIFTOUT
 	ShiftRegister::Pins pins {}; // dummy
 	shiftRegisterOut.setup(pins, shiftOutBits.size()); // preallocat

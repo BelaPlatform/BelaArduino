@@ -607,6 +607,10 @@ static void belaSystem(const char* first, int argc, t_atom* argv)
 
 void Bela_listHook(const char *source, int argc, t_atom *argv)
 {
+#ifdef BELA_LIBPD_ARDUINO
+	if(0 == strcmp(source, "bela_arduino"))
+		BelaArduino_listHook(argc, argv);
+#endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_GUI
 	if(0 == strcmp(source, "bela_guiOut"))
 	{
@@ -655,6 +659,10 @@ void Bela_listHook(const char *source, int argc, t_atom *argv)
 	}
 }
 void Bela_messageHook(const char *source, const char *symbol, int argc, t_atom *argv){
+#ifdef BELA_LIBPD_ARDUINO
+	if(0 == strcmp(source, "bela_arduino"))
+		BelaArduino_messageHook(symbol, argc, argv);
+#endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_MIDI
 	if(strcmp(source, "bela_setMidi") == 0)
 	{
@@ -973,6 +981,10 @@ void Bela_floatHook(const char *source, float value){
 	// let's make this as optimized as possible for built-in digital Out parsing
 	// the built-in digital receivers are of the form "bela_digitalOutXX" where XX is between gLibpdDigitalChannelOffset and (gLibpdDigitalCHannelOffset+gDigitalChannelsInUse)
 	static int prefixLength = strlen("bela_digitalOut");
+#ifdef BELA_LIBPD_ARDUINO
+	if(0 == strncmp(source, "bela_arduino", prefixLength))
+		BelaArduino_floatHook(value);
+#endif // BELA_LIBPD_ARDUINO
 	if(strncmp(source, "bela_digitalOut", prefixLength)==0){
 		if(source[prefixLength] != 0){ //the two ifs are used instead of if(strlen(source) >= prefixLength+2)
 			if(source[prefixLength + 1] != 0){
