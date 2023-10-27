@@ -14,6 +14,11 @@ void setup()
 
 void loop()
 {
+	static unsigned int count = 0;
+	float myArray[2];
+	myArray[1] = count & 1;
+	myArray[0] = count++;
+	gui.sendBuffer(0, myArray);
 	pdSendMessage("playSound", 0);
 	digitalWrite(0, HIGH);
 	digitalWrite(1, digitalRead(2));
