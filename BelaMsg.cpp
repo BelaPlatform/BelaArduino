@@ -18,7 +18,7 @@ void msgInit(BelaReceiver rec, size_t count)
 	msgHeaderPtr = kMsgPreHeader;
 }
 
-static void msgPush(char tag, const void* data, size_t size)
+void msgPush(char tag, const void* data, size_t size)
 {
 	msgBuf[msgHeaderPtr++] = (uint8_t)tag;
 	msgBuf.resize(msgDataPtr + size);
@@ -26,12 +26,7 @@ static void msgPush(char tag, const void* data, size_t size)
 	msgDataPtr += size;
 }
 
-void msgAdd(float value)
-{
-	msgPush('f', &value, sizeof(value));
-}
-
-void msgAdd(const char* value)
+void msgAddFS(const char* value)
 {
 	msgPush('s', value, strlen(value) + 1);
 }
