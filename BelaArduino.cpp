@@ -163,22 +163,26 @@ void processPipe()
 			uint8_t numTags = msg[0];
 			BelaReceiver rec = BelaReceiver(msg[1]);
 			const uint8_t* tags = msg + kMsgPreHeader;
-			if(numTags < 2 || 's' != tags[0])
-			{
-				rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
-			}
-			// numTags is number of elements in the incoming message.
-			// When sending to Pd, the first element is the receiver name,
-			// so it doesn't count towards message length.
-			size_t numElements = numTags - 1;
-			// Additionally, if the second element is a string, then it
-			// becomes the message "type" (see libpd.h for details),
-			// otherwise it is sent as a list ("untyped").
-			bool isList = ('s' != tags[1]);
-			if(isList)
-				numElements -= 1;
-			libpd_start_message(numElements);
 			uint8_t nextArg = kMsgPreHeader + numTags;
+			bool isList = false;
+			if(kBelaReceiverPd == rec)
+			{
+				if(numTags < 2 || 's' != tags[0])
+				{
+					rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
+				}
+				// numTags is number of elements in the incoming message.
+				// When sending to Pd, the first element is the receiver name,
+				// so it doesn't count towards message length.
+				size_t numElements = numTags - 1;
+				// Additionally, if the second element is a string, then it
+				// becomes the message "type" (see libpd.h for details),
+				// otherwise it is sent as a list ("untyped").
+				isList = ('s' != tags[1]);
+				if(isList)
+					numElements -= 1;
+				libpd_start_message(numElements);
+			}
 			for(size_t n = 0; n < numTags; ++n)
 			{
 				if('f' == tags[n])
@@ -186,7 +190,10 @@ void processPipe()
 					float val;
 					memcpy(&val, msg + nextArg, sizeof(val));
 					nextArg += sizeof(val);
-					libpd_add_float(val);
+					if(kBelaReceiverPd == rec)
+					{
+						libpd_add_float(val);
+					}
 				}
 				if('s' == tags[n])
 				{
@@ -200,18 +207,24 @@ void processPipe()
 						break;
 					}
 					nextArg += len + 1;
-					if(0 == n)
-						selector.assign(str, str + len + 1);
-					else if(1 == n)
-						type.assign(str, str + len + 1);
-					else
-						libpd_add_symbol(str);
+					if(kBelaReceiverPd == rec)
+					{
+						if(0 == n)
+							selector.assign(str, str + len + 1);
+						else if(1 == n)
+							type.assign(str, str + len + 1);
+						else
+							libpd_add_symbol(str);
+					}
 				}
 			}
-			if(isList)
-				libpd_finish_list(selector.data());
-			else
-				libpd_finish_message(selector.data(), type.data());
+			if(kBelaReceiverPd == rec)
+			{
+				if(isList)
+					libpd_finish_list(selector.data());
+				else
+					libpd_finish_message(selector.data(), type.data());
+			}
 		}
 	}
 }
