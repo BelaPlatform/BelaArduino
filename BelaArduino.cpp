@@ -3,12 +3,17 @@
 #include "Arduino.h"
 #include <Bela.h>
 #define ENABLE_WATCHER
+#define ENABLE_GUI
 #define WATCH_ONCE
 #define WATCH_AUDIO
 
 #ifdef ENABLE_WATCHER
 #include "Watcher.h"
 #endif // ENABLE_WATCHER
+#ifdef ENABLE_GUI
+#include "Gui.h"
+Gui gui;
+#endif // ENABLE_GUI
 
 #include <math.h>
 #include <array>
@@ -221,9 +226,16 @@ bool BelaArduino_setup(BelaContext* context)
 		fprintf(stderr, "Error: buffers most be non-interleaved\n");
 		return false;
 	}
+#ifdef ENABLE_GUI
+	gui.setup(context->projectName);
+#endif // ENABLE_GUI
 #ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
+#ifdef ENABLE_GUI
+	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName, 5556, "gui_watcher");
+#else // ENABLE_GUI
 	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName);
+#endif // ENABLE_GUI
 	if(context->digital)
 		wdigital = new Watcher<uint32_t>("digital");
 	wAnalogIn.resize(context->analogInChannels);
