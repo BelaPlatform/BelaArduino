@@ -3,6 +3,7 @@
 #include <string>
 #include <string.h>
 #include <libraries/Pipe/Pipe.h>
+#include <typeinfo>
 
 constexpr size_t kMsgPreHeader = 2;
 enum BelaSourceThread {
