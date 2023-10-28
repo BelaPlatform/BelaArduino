@@ -3,6 +3,7 @@
 #include "Arduino.h"
 #include "PdArduino.h"
 #include <Bela.h>
+#define ENABLE_LIBPD
 #define ENABLE_WATCHER
 #define ENABLE_GUI
 #define ENABLE_SHIFTOUT
@@ -177,6 +178,7 @@ void msgSendToArduino(const char* str, const float* vals, size_t count)
 }
 static AuxiliaryTask arduinoLoopTask;
 
+#ifdef ENABLE_LIBPD
 void BelaArduino_floatHook(float value)
 {
 	if(pdReceiveMsg)
@@ -204,6 +206,7 @@ void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv)
 
 static std::vector<char> selector(1000);
 static std::vector<char> type(1000);
+#endif // ENABLE_LIBPD
 static BelaMsgParser rtParser(belaArduinoPipe, true);
 void processPipe()
 {
@@ -239,6 +242,7 @@ void processPipe()
 			shiftOutInProgress = true;
 			continue;
 		}
+#ifdef ENABLE_LIBPD
 		if(kBelaReceiverPd == p.rec)
 		{
 			bool isList = false;
@@ -286,12 +290,15 @@ void processPipe()
 			else
 				libpd_finish_message(selector.data(), type.data());
 		}
+#endif // ENABLE_LIBPD
 	}
 }
 
-bool BelaArduino_setup(BelaContext* context)
+bool BelaArduino_setup(BelaContext* context, void*)
 {
+#ifdef ENABLE_LIBPD
 	libpd_bind("bela_arduino");
+#endif // ENABLE_LIBPD
 #ifdef ENABLE_SHIFTOUT
 	ShiftRegister::Pins pins {}; // dummy
 	shiftRegisterOut.setup(pins, shiftOutBits.size()); // preallocat
@@ -487,7 +494,7 @@ void BelaArduino_renderBottom(BelaContext* context)
 #endif // ENABLE_WATCHER
 }
 
-void BelaArduino_cleanup(BelaContext* context)
+void BelaArduino_cleanup(BelaContext* context, void*)
 {
 #ifdef ENABLE_WATCHER
 	delete wdigital;
@@ -507,3 +514,27 @@ void BelaArduino_cleanup(BelaContext* context)
 #endif // WATCH_AUDIO
 #endif // ENABLE_WATCHER
 }
+#ifndef ENABLE_LIBPD
+void Bela_userSettings(BelaInitSettings *settings)
+{
+	settings->uniformSampleRate = 1;
+	settings->interleave = 0;
+	settings->analogOutputsPersist = 0;
+}
+
+bool setup(BelaContext* context, void*)
+{
+	return BelaArduino_setup(context, NULL);
+}
+
+void render(BelaContext* context, void*)
+{
+	BelaArduino_renderTop(context);
+	BelaArduino_renderBottom(context);
+}
+
+void cleanup(BelaContext* context, void*)
+{
+	BelaArduino_cleanup(context, NULL);
+}
+#endif // ENABLE_LIBPD
