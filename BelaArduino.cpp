@@ -134,12 +134,33 @@ static void ArduinoLoop(void*)
 {
 	while(!Bela_stopRequested())
 	{
+		// we check this beforehand to avoid reading overhead
+		// if no callback is defined
 		if(pdReceiveMsg)
 		{
 			BelaMsgParser::Parsed& p = nonRtParser.process();
 			if(p.good)
 			{
-				// TODO: retrieve data and call pdReceiveMsg()
+				if(kBelaReceiverArduino == p.rec && pdReceiveMsg)
+				{
+					bool err = false;
+					char const* str;
+					if(p.isString())
+						str = p.popString();
+					else
+						err = true;
+					size_t length = p.numTags - 1;
+					float data[length];
+					for(size_t n = 0; n < length && !err; ++n)
+					{
+						if(p.isA("f"))
+							p.pop(data[n]);
+						else
+							err = true;
+					}
+					if(!err)
+						pdReceiveMsg(str, data, length);
+				}
 			}
 		}
 		loop();
