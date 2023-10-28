@@ -191,93 +191,80 @@ void processPipe()
 		BelaMsgParser::Parsed& p = rtParser.process();
 		if(!p.good)
 			break;
-		uint8_t* msg = p.msg.data();
-		const uint8_t* tags = p.tags;
-		uint8_t numTags = p.numTags;
-		uint8_t nextArg = p.nextArg;
-		BelaReceiver rec = p.rec;
-			// fixed-type messages first
-			if(kBelaReceiverShiftOut == rec)
+		// fixed-type messages first
+		if(kBelaReceiverShiftOut == p.rec)
+		{
+			if(!p.matches("hhhhj"))
 			{
-				if(strncmp((const char*)tags, "hhhhj", 5))
-					rt_fprintf(stderr, "shiftOut: malformed message\n");
-				ShiftRegister::Pins pins;
-				pins.data = *(msg + nextArg++);
-				pins.clock = *(msg + nextArg++);
-				pins.latch = *(msg + nextArg++);
-				size_t numBits = *(msg + nextArg++);
-				uint32_t bits;
-				memcpy(&bits, msg + nextArg, sizeof(bits));
-				shiftOutBits.resize(numBits);
-				for(size_t n = 0; n < shiftOutBits.size(); ++n)
-					shiftOutBits[n] = bits & (1 << n);
-				shiftRegisterOut.setup(pins, numBits);
-
-				shiftRegisterOut.setData(shiftOutBits);
-				shiftOutInProgress = true;
+				rt_fprintf(stderr, "shiftOut: malformed message\n");
 				continue;
 			}
+			ShiftRegister::Pins pins;
+			pins.data = p.popNumeric();
+			pins.clock = p.popNumeric();
+			pins.latch = p.popNumeric();
+			uint8_t numBits = p.popNumeric();
+			uint32_t bits = p.popNumeric();
+			shiftOutBits.resize(numBits);
+#if 0
+			rt_printf("data: %d, clock: %d, latch: %d, numBits: %d, bits:  %#010x\n",
+					pins.data, pins.clock, pins.latch, numBits, bits);
+#endif
+			for(size_t n = 0; n < shiftOutBits.size(); ++n)
+				shiftOutBits[n] = bits & (1 << n);
+			shiftRegisterOut.setup(pins, numBits);
+
+			shiftRegisterOut.setData(shiftOutBits);
+			shiftOutInProgress = true;
+			continue;
+		}
+		if(kBelaReceiverPd == p.rec)
+		{
 			bool isList = false;
-			if(kBelaReceiverPd == rec)
+			if(p.numTags < 2 || !p.isString(0))
 			{
-				if(numTags < 2 || 's' != tags[0])
-				{
-					rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
-				}
-				// numTags is number of elements in the incoming message.
-				// When sending to Pd, the first element is the receiver name,
-				// so it doesn't count towards message length.
-				size_t numElements = numTags - 1;
-				// Additionally, if the second element is a string, then it
-				// becomes the message "type" (see libpd.h for details),
-				// otherwise it is sent as a list ("untyped").
-				isList = ('s' != tags[1]);
-				if(isList)
-					numElements -= 1;
-				libpd_start_message(numElements);
+				rt_fprintf(stderr, "Messages to Pd need to have at least two elements, the first of which should be a s\n");
+				continue;
 			}
-			for(size_t n = 0; n < numTags; ++n)
+			// numTags is number of elements in the incoming message.
+			// When sending to Pd, the first element is the receiver name,
+			// so it doesn't count towards message length.
+			size_t numElements = p.numTags - 1;
+			// Additionally, if the second element is a string, then it
+			// becomes the message "type" (see libpd.h for details),
+			// otherwise it is sent as a list ("untyped").
+			isList = !p.isString(1);
+			if(isList)
+				numElements -= 1;
+			libpd_start_message(numElements);
+			size_t n = 0;
+			while(!p.done())
 			{
-				if('f' == tags[n])
+				if(p.isA("f"))
 				{
-					float val;
-					memcpy(&val, msg + nextArg, sizeof(val));
-					nextArg += sizeof(val);
-					if(kBelaReceiverPd == rec)
-					{
-						libpd_add_float(val);
-					}
-				}
-				if('s' == tags[n])
+					float val = p.popNumeric();
+					libpd_add_float(val);
+				} else
+				if(p.isString())
 				{
-					// look for end of null-delimited string
-					const char* str = (const char*)msg + nextArg;
-					size_t maxLen = sizeof(msg) - nextArg - 1;
-					size_t len = strnlen(str, maxLen);
-					if('\0' != str[len])
-					{
-						rt_fprintf(stderr, "Malformed message\n");
-						break;
-					}
-					nextArg += len + 1;
-					if(kBelaReceiverPd == rec)
-					{
-						if(0 == n)
-							selector.assign(str, str + len + 1);
-						else if(1 == n)
-							type.assign(str, str + len + 1);
-						else
-							libpd_add_symbol(str);
-					}
+					const char* str = p.popString();
+					if(0 == n)
+						selector.assign(str, str + strlen(str) + 1);
+					else if(1 == n)
+						type.assign(str, str + strlen(str) + 1);
+					else
+						libpd_add_symbol(str);
+				} else {
+					rt_fprintf(stderr, "Unexpected type in message for Pd: '%c'\n", p.tag());
+					break;
 				}
+				++n;
 			}
-			if(kBelaReceiverPd == rec)
-			{
-				if(isList)
-					libpd_finish_list(selector.data());
-				else
-					libpd_finish_message(selector.data(), type.data());
-			}
+			if(isList)
+				libpd_finish_list(selector.data());
+			else
+				libpd_finish_message(selector.data(), type.data());
+		}
 	}
 }
 
