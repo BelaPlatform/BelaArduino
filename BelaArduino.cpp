@@ -370,7 +370,7 @@ bool BelaArduino_setup(BelaContext* context, void*)
 	return true;
 }
 
-void BelaArduino_renderTop(BelaContext* context)
+void BelaArduino_renderTop(BelaContext* context, void*)
 {
 	processPipe();
 #ifdef ENABLE_WATCHER
@@ -419,7 +419,7 @@ void BelaArduino_renderTop(BelaContext* context)
 	inited = true;
 }
 
-void BelaArduino_renderBottom(BelaContext* context)
+void BelaArduino_renderBottom(BelaContext* context, void*)
 {
 	static uint32_t pwmClock = 0;
 	for(size_t c = 0; c < context->digitalChannels; ++c)
@@ -522,19 +522,19 @@ void Bela_userSettings(BelaInitSettings *settings)
 	settings->analogOutputsPersist = 0;
 }
 
-bool setup(BelaContext* context, void*)
+bool setup(BelaContext* context, void* userData)
 {
-	return BelaArduino_setup(context, NULL);
+	return BelaArduino_setup(context, userData);
 }
 
-void render(BelaContext* context, void*)
+void render(BelaContext* context, void* userData)
 {
-	BelaArduino_renderTop(context);
-	BelaArduino_renderBottom(context);
+	BelaArduino_renderTop(context, userData);
+	BelaArduino_renderBottom(context, userData);
 }
 
-void cleanup(BelaContext* context, void*)
+void cleanup(BelaContext* context, void* userData)
 {
-	BelaArduino_cleanup(context, NULL);
+	BelaArduino_cleanup(context, userData);
 }
 #endif // ENABLE_LIBPD

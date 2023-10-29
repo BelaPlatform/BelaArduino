@@ -25,7 +25,7 @@ void BelaArduino_floatHook(float value);
 void BelaArduino_listHook(int argc, t_atom *argv);
 void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv);
 
-bool BelaArduino_setup(BelaContext* context);
-void BelaArduino_renderTop(BelaContext* context);
-void BelaArduino_renderBottom(BelaContext* context);
-void BelaArduino_cleanup(BelaContext* context);
+bool BelaArduino_setup(BelaContext* context, void*);
+void BelaArduino_renderTop(BelaContext* context, void*);
+void BelaArduino_renderBottom(BelaContext* context, void*);
+void BelaArduino_cleanup(BelaContext* context, void*);

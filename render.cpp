@@ -1240,7 +1240,7 @@ bool setup(BelaContext *context, void *userData)
 	gTrillPipe.setup("trillPipe", 1024);
 #endif // BELA_LIBPD_TRILL
 #ifdef BELA_LIBPD_ARDUINO
-	if(!BelaArduino_setup(context))
+	if(!BelaArduino_setup(context, userData))
 		return false;
 #endif // BELA_LIBPD_ARDUINO
 	return true;
@@ -1249,7 +1249,7 @@ bool setup(BelaContext *context, void *userData)
 void render(BelaContext *context, void *userData)
 {
 #ifdef BELA_LIBPD_ARDUINO
-	BelaArduino_renderTop(context);
+	BelaArduino_renderTop(context, userData);
 #endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_GUI
 	while(gGuiControlBuffers.size()) // this won't change within the loop, but it's good not to have to use a separate flag
@@ -1609,14 +1609,14 @@ void render(BelaContext *context, void *userData)
 		}
 	}
 #ifdef BELA_LIBPD_ARDUINO
-	BelaArduino_renderBottom(context);
+	BelaArduino_renderBottom(context, userData);
 #endif // BELA_LIBPD_ARDUINO
 }
 
 void cleanup(BelaContext *context, void *userData)
 {
 #ifdef BELA_LIBPD_ARDUINO
-	BelaArduino_cleanup(context);
+	BelaArduino_cleanup(context, userData);
 #endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_MIDI
 	for(auto a : midi)
