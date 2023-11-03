@@ -85,14 +85,26 @@ void analogWrite(uint32_t channel, float value)
 }
 
 #include <unistd.h>
-void delay(uint32_t t) {
-	// split across multiple stops so we can exit smoothly on a long wait
-	while(t > 100 && !Bela_stopRequested())
+static void splitDelayUs(uint64_t t)
+{
+	// split across multiple steps so we can return early on a long wait
+	size_t step = 100000;
+	while(!Bela_stopRequested())
 	{
-		usleep(100 * 1000);
-		t -= 100 ;
+		unsigned int sleep = t >= step ? step : t;
+		printf("split %u\n", sleep);
+		usleep(sleep);
+		t -= sleep;
+		if(!t)
+			break;
 	}
-	usleep(t * 1000);
+}
+void delay(uint32_t t) {
+	splitDelayUs(uint64_t(t) * 1000);
+}
+void delayMicroseconds(uint32_t t)
+{
+	splitDelayUs(t);
 }
 void utoa(uint32_t num, char* dest, size_t len) {
 	snprintf(dest, len, "%u", num);

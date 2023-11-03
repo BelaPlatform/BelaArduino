@@ -29,6 +29,10 @@ struct Print {
 	{
 		std::cout << "\n";
 	}
+	operator bool()
+	{
+		return true;
+	}
 };
 
 extern Print Serial;
@@ -41,6 +45,7 @@ uint32_t random(uint32_t max);
 uint32_t random(uint32_t min, uint32_t max);
 void randomSeed(uint32_t s);
 void delay(uint32_t);
+void delayMicroseconds(uint32_t);
 #define LED_BUILTIN 0
 #define INPUT 0
 #define OUTPUT 1
