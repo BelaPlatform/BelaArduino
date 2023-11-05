@@ -71,11 +71,40 @@ void belaMsgSend(BelaSourceThread thread, BelaReceiver receiver, const Ts&... va
 class BelaMsgParser {
 public:
 	struct Parsed {
-		bool matches(const char* tags)
+	private:
+		bool doMatches(const char* second, bool fromCurrent, bool partial)
 		{
 			if(!good)
 				return false;
-			return 0 == strcmp(tags, tags);
+			size_t start = fromCurrent * nextTag;
+			size_t tagsToCompare = numTags - start;
+			size_t len = strlen(second);
+			if(partial)
+			{
+			       if(len > tagsToCompare)
+					return false;
+			} else {
+				if(len != tagsToCompare)
+					return false;
+			}
+			return 0 == strncmp((const char*)tags + start, second, len);
+		}
+	public:
+		bool matches(const char* tags)
+		{
+			return doMatches(tags, false, false);
+		}
+		bool matchesRem(const char* tags)
+		{
+			return doMatches(tags, true, false);
+		}
+		bool matchesPart(const char* tags)
+		{
+			return doMatches(tags, false, true);
+		}
+		bool matchesPartRem(const char* tags)
+		{
+			return doMatches(tags, true, true);
 		}
 		// performs no check
 		template <typename T>
