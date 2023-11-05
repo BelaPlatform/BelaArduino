@@ -56,7 +56,7 @@ void delayMicroseconds(uint32_t);
 void pinMode(uint32_t, uint32_t);
 bool digitalRead(uint32_t);
 void digitalWrite(uint32_t, bool);
-void pwmWrite(uint32_t, float);
+void pwmWrite(uint32_t, float, float = 172);
 float analogRead(uint32_t);
 void analogWrite(uint32_t, float);
 #define LSBFIRST 0

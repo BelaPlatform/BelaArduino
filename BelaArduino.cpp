@@ -208,7 +208,7 @@ static std::vector<char> selector(1000);
 static std::vector<char> type(1000);
 #endif // ENABLE_LIBPD
 static BelaMsgParser rtParser(belaArduinoPipe, true);
-void processPipe()
+void processPipe(BelaContext* context)
 {
 	while(1) // breaks when no data is available right now
 	{
@@ -241,6 +241,31 @@ void processPipe()
 			shiftRegisterOut.setData(shiftOutBits);
 			shiftOutInProgress = true;
 			continue;
+		}
+		if(kBelaReceiverDigital == p.rec)
+		{
+			if(!p.matchesPart("jj"))
+			{
+				continue;
+			}
+			enum DigitalMode mode = (DigitalMode)p.popType<unsigned>();
+			unsigned int channel = p.popType<unsigned>();
+			if(kDigitalModePwm == mode)
+			{
+				if(!p.matchesRem("ff"))
+				{
+					rt_fprintf(stderr, "digital pwm: malformed message\n");
+					continue;
+				}
+				float width = p.popType<float>();
+				float freq = p.popType<float>();
+				unsigned int period = int(context->audioSampleRate / freq + 0.5f);
+				uint32_t pwmWidth = width * period;
+				digital[channel].value = pwmWidth;
+				digital[channel].period = period;
+				//rt_printf("width: %f, freq %f, value: %d, period: %d\n" ,  width, freq, pwmWidth, period);
+			}
+			digital[channel].mode = mode;
 		}
 #ifdef ENABLE_LIBPD
 		if(kBelaReceiverPd == p.rec)
@@ -365,14 +390,14 @@ bool BelaArduino_setup(BelaContext* context, void*)
 	}
 	belaArduinoPipe.setup("BelaArduino");
 	ArduinoSetup();
-	processPipe();
+	processPipe(context);
 	arduinoLoopTask = Bela_createAuxiliaryTask(ArduinoLoop, 0, "ArduinoLoop");
 	return true;
 }
 
 void BelaArduino_renderTop(BelaContext* context, void*)
 {
-	processPipe();
+	processPipe(context);
 #ifdef ENABLE_WATCHER
 	gWatcherConnected = Bela_getDefaultWatcherManager()->getGui().numConnections();
 	if(gWatcherConnected)
@@ -421,7 +446,6 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 
 void BelaArduino_renderBottom(BelaContext* context, void*)
 {
-	static uint32_t pwmClock = 0;
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		// mode is set from Arduino
@@ -433,17 +457,20 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 				digitalWrite(context, 0, c, digital[c].value);
 			if(kDigitalModePwm == digital[c].mode)
 			{
-				uint8_t clock = pwmClock;
+				auto& count = digital[c].count;
+				const auto& value = digital[c].value;
+				const auto& period = digital[c].period;
 				for(size_t n = 0; n < context->digitalFrames; ++n)
 				{
-					clock = (clock + 1) & (kPwmPeriod - 1);
-					bool value = digital[c].value > clock;
-					digitalWriteOnce(context, n, c, value);
+					bool out = value > count;
+					digitalWriteOnce(context, n, c, out);
+					count++;
+					if(count >= period)
+						count = 0;
 				}
 			}
 		}
 	}
-	pwmClock = (pwmClock + context->digitalFrames) & (kPwmPeriod - 1);
 #ifdef ENABLE_SHIFTOUT
 	if(shiftOutInProgress)
 	{

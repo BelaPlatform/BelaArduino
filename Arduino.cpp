@@ -53,14 +53,16 @@ void digitalWrite(uint32_t channel, bool value)
 	}
 }
 
-void pwmWrite(uint32_t channel, float value)
+void pwmWrite(uint32_t channel, float value, float freq)
 {
 	if(channel < digital.size())
 	{
-		digital[channel].mode = kDigitalModePwm;
-		uint16_t pwmWidth = value * kPwmPeriod;
-		pwmWidth = value >= 1 || pwmWidth > kPwmPeriod ? kPwmPeriod : pwmWidth;
-		digital[channel].value = pwmWidth;
+		msgInit(kBelaSourceThreadArduino, kBelaReceiverDigital, 4);
+		msgAdd(kBelaSourceThreadArduino, unsigned(kDigitalModePwm));
+		msgAdd(kBelaSourceThreadArduino, unsigned(channel));
+		msgAdd(kBelaSourceThreadArduino, value);
+		msgAdd(kBelaSourceThreadArduino, freq);
+		msgSend(kBelaSourceThreadArduino);
 	}
 }
 

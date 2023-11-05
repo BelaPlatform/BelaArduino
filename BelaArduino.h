@@ -10,11 +10,11 @@ enum DigitalMode {
 	kDigitalModePwm,
 };
 struct DigitalChannel {
+	uint32_t value;
+	uint32_t period;
+	uint32_t count;
 	DigitalMode mode;
-	uint16_t value;
 };
-// assumed to be power of 2
-static constexpr size_t kPwmPeriod = 256;
 
 extern std::vector<DigitalChannel> digital;
 extern Pipe belaArduinoPipe;

@@ -15,6 +15,7 @@ enum BelaReceiver {
 	kBelaReceiverShiftOut,
 	kBelaReceiverPd = 123,
 	kBelaReceiverArduino,
+	kBelaReceiverDigital,
 };
 
 void msgInit(BelaSourceThread thread, BelaReceiver, size_t);
