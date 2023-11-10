@@ -5,6 +5,7 @@
 #include <libraries/libpd/libpd.h>
 
 enum DigitalMode {
+	kDigitalModeIgnored,
 	kDigitalModeInput,
 	kDigitalModeOutput,
 	kDigitalModePwm,

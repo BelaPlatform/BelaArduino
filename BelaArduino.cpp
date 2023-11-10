@@ -386,7 +386,7 @@ bool BelaArduino_setup(BelaContext* context, void*)
 	for(size_t c = 0; c < digital.size(); ++c)
 	{
 		digital[c].value = 0;
-		digital[c].mode = kDigitalModeInput;
+		digital[c].mode = kDigitalModeIgnored;
 	}
 	belaArduinoPipe.setup("BelaArduino");
 	ArduinoSetup();
@@ -449,6 +449,8 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		// mode is set from Arduino
+		if(kDigitalModeIgnored == digital[c].mode)
+			continue;
 		int mode = (kDigitalModeInput == digital[c].mode) ? INPUT : OUTPUT;
 		pinMode(context, 0, c, mode);
 		if(OUTPUT == mode)
