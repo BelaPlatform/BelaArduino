@@ -38,9 +38,21 @@ unsigned long micros() {
 
 void pinMode(uint32_t channel, uint32_t mode)
 {
+	DigitalMode m;
 	if(channel < digital.size())
 	{
-		digital[channel].mode = INPUT == mode ? kDigitalModeInput : kDigitalModeOutput;
+		switch(mode)
+		{
+			case INPUT:
+				m = kDigitalModeInput;
+				break;
+			case OUTPUT:
+				m = kDigitalModeOutput;
+				break;
+			default:
+				m = kDigitalModeIgnored;
+		}
+		digital[channel].mode = m;
 	}
 }
 
