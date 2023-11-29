@@ -106,7 +106,6 @@ static void splitDelayUs(uint64_t t)
 	while(!Bela_stopRequested())
 	{
 		unsigned int sleep = t >= step ? step : t;
-		printf("split %u\n", sleep);
 		usleep(sleep);
 		t -= sleep;
 		if(!t)
