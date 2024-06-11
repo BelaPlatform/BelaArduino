@@ -14,7 +14,7 @@
 #include "Watcher.h"
 #endif // ENABLE_WATCHER
 #ifdef ENABLE_GUI
-#include "Gui.h"
+#include <libraries/Gui/Gui.h>
 Gui gui;
 #endif // ENABLE_GUI
 #ifdef ENABLE_SHIFTOUT

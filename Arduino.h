@@ -36,7 +36,7 @@ struct Print {
 };
 
 extern Print Serial;
-#include "Gui.h"
+#include <libraries/Gui/Gui.h>
 extern Gui gui;
 
 unsigned long micros();
