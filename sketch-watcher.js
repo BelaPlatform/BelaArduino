@@ -1,5 +1,6 @@
 // watcher stuff up here
 //
+let serverInactivePopup;
 function preload() {
   let basePath = "/projects/" + Bela.control.handler.project + "/gui/";
   loadScript(basePath + "Slider.js");
@@ -8,6 +9,14 @@ function preload() {
   loadScript(basePath + "BarGraph.js");
   loadScript(basePath + "SignalScope.js");
   loadScript(basePath + "../watcher.js");
+  let id = "serverInactivePopup";
+  let container = $("#gui-container");
+  container.prepend("<div id='" + id + "'>SERVER IS INACTIVE</div>");
+  serverInactivePopup = $("#" + id, container);
+  serverInactivePopup.css("z-index", 100000).css("position", "absolute").css("left", 0).css("top", 0)
+    .css("width", "100%").css("bottom", 0).css("font-size", "40px")
+    .css("text-align", "center").css("background", "rgba(255, 0, 0, 0.5)");
+  displayServerActive(false);
 }
 
 function howMany(str, arr) {
@@ -125,9 +134,23 @@ function pollBackend() {
   }, 100);
 }
 
+function displayServerActive(active)
+{
+  if(active)
+    serverInactivePopup.hide();
+  else
+    serverInactivePopup.show();
+}
+
+let serverActiveHdl;
 function controlCallback(data) {
   if(!data.watcher)
     return;
+  clearInterval(serverActiveHdl);
+  serverActiveHdl = setInterval(() => {
+    displayServerActive(false);
+  }, 2000);
+  displayServerActive(true);
   if(data.watcher.watchers) {
     let watchers = data.watcher.watchers;
     list = data.watcher.watchers;
@@ -184,7 +207,7 @@ function processValues() {
   if(!inBufs.length)
     return;
   let buffers = Watcher.parseInputData(inBufs, list, guiPollsAndUsesList);
-  for(let n = 0; n < buffers.length; ++n) {
+  for(let n = 0; buffers && n < buffers.length; ++n) {
     let buf = buffers[n];
     let w = buf.watcher;
     let group;
