@@ -343,10 +343,11 @@ bool BelaArduino_setup(BelaContext* context, void*)
 #endif // ENABLE_GUI
 #ifdef ENABLE_WATCHER
 	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
+	std::string watcherSketch = std::string("/projects/") + context->projectName + "/sketch-watcher.js";
 #ifdef ENABLE_GUI
-	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName, 5556, "gui_watcher");
+	Bela_getDefaultWatcherManager()->getGui().setup(watcherSketch, 5556); // use /gui?wsPort=5556
 #else // ENABLE_GUI
-	Bela_getDefaultWatcherManager()->getGui().setup(context->projectName);
+	Bela_getDefaultWatcherManager()->getGui().setup(watcherSketch);
 #endif // ENABLE_GUI
 	if(context->digital)
 		wdigital = new Watcher<uint32_t>("digital");

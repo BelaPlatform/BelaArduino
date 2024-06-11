@@ -1,0 +1,613 @@
+// watcher stuff up here
+//
+function preload() {
+  let basePath = "/projects/" + Bela.control.handler.project + "/gui/";
+  loadScript(basePath + "Slider.js");
+  loadScript(basePath + "ToggleSwitch.js");
+  loadScript(basePath + "LED.js");
+  loadScript(basePath + "BarGraph.js");
+  loadScript(basePath + "SignalScope.js");
+  loadScript(basePath + "../watcher.js");
+}
+
+function howMany(str, arr) {
+  let count = 0;
+  for(let n = 0; n < arr.length; ++n) {
+    if(arr[n].name.search(str) == 0)
+      count++;
+  }
+  return count;
+}
+
+let simplifiedCtl = false;
+let loopbackDemo = false;
+let digitalMask = 0;
+function digitalControlSet(bit, active) {
+  let bits = 1 << bit;
+  let newMask = (digitalMask & ~bits) | (active ? bits : 0);
+  if(newMask != digitalMask) {
+    digitalMask = newMask;
+    Watcher.sendCommand({
+      cmd: digitalMask ? "control" : "uncontrol",
+      watchers: ["digital"],
+    });
+  }
+  digitalSendValues();
+}
+
+function digitalIsChannelControlled(bit) {
+  return !!(digitalMask & (1 << bit));
+}
+
+function digitalSendValues() {
+  let lowWord = 0;
+  let highWord = 0;
+  // build the full output value based on visualised LEDs and switches
+  for(let c = 0; c < nGpios; ++c) {
+    if(digitalIsChannelControlled(c)) {
+      let isIn = !!switches[c].getState();
+      let high = !!leds[c].getState();
+      lowWord |= isIn << c;
+      highWord |= high << c;
+    }
+  }
+  //Javascript has some weird stuff where (1<<31) becomes a negative number
+  // so we have to use multiplication instead, or the 16th bit would break
+  // things when set in the high word. BigInt would perhaps be a better option,
+  // but it requires ECMAScript 2020. See
+  // https://stackoverflow.com/questions/11703599/unsigned-32-bit-integers-in-javascript#comment133608159_11704904
+  let value = lowWord + (highWord * (1 << nGpios));
+  let mask = digitalMask + (digitalMask * (1 << nGpios));
+  console.log("sending 0x" + (value.toString(16).padStart(8, '0')) + " 0x" + (mask.toString(16).padStart(8, '0')));
+  Watcher.sendCommand({
+    cmd: "setMask",
+    watchers: ["digital"],
+    values: [value],
+    masks: [mask],
+  });
+}
+
+function analogOutControlSet(channel, active) {
+  Watcher.sendCommand({
+    cmd: active ? "control" : "uncontrol",
+    watchers: ["analogOut" + channel],
+  });
+}
+
+let analogOutValues = [];
+function analogOutSendValues() {
+  let values = [];
+  let watchers = [];
+  for(let n = 0; n < ctlAnalogOut.length; ++n) {
+    if(ctlAnalogOut[n].getState()) {
+      let value = sliders[n].getValue();
+      console.log("value", value, n);
+      if(analogOutValues[n] != value) {
+        analogOutValues[n] = value;
+        values.push(value);
+        watchers.push("analogOut" + n);
+      }
+    }
+  }
+  if(watchers.length) {
+    Watcher.sendCommand({
+      cmd: "set",
+      watchers: watchers,
+      values: values,
+    });
+  }
+}
+
+let guiPollsAndUsesList = true;
+let listIntervalHdl;
+let list;
+let streamWatchers = [];
+let monitorWatchers = [];
+
+function pollBackend() {
+  clearInterval(listIntervalHdl);
+  console.log("start poll");
+  listIntervalHdl = setInterval(() => {
+    console.log("do poll", clientActive);
+    if(!clientActive)
+      return;
+    // request another update ("list") for all variables.
+    Watcher.sendCommand({ cmd: "list" }, true)
+    if(scopes.length) {
+      // also request enough frames of the audio
+      // channels to draw one "scope" worth.
+      Watcher.sendCommand({
+        cmd: "watch",
+        watchers: streamWatchers,
+        durations: Array(streamWatchers.length).fill(scopes[0].w),
+      }, true);
+    }
+  }, 100);
+}
+
+function controlCallback(data) {
+  if(!data.watcher)
+    return;
+  if(data.watcher.watchers) {
+    let watchers = data.watcher.watchers;
+    list = data.watcher.watchers;
+    if(loopbackDemo) {
+      console.log(data.watcher);
+      // first time we receive a response to list: generate GUI
+      loopbackDemo = false; // now we are being serious
+      Watcher.processList(watchers); // so that parseBuffers() works
+      nGpios = howMany("digital", watchers) ? 16 : 0;
+      nAnalogIn = howMany("analogIn", watchers);
+      nAnalogOut = howMany("analogOut", watchers);
+      nAudioIn = howMany("audioIn", watchers);
+      nAudioOut = howMany("audioOut", watchers);
+      monitorWatchers = [];
+      streamWatchers = [];
+      for(let n = 0; n < watchers.length; ++n) {
+        let w = watchers[n].name;
+        if(0 == w.search(/^audio[IO]/)) {
+          streamWatchers.push(w);
+        } else {
+          monitorWatchers.push(w);
+        }
+      }
+      setupGuis();
+      if(guiPollsAndUsesList)
+        pollBackend();
+    }
+    if(guiPollsAndUsesList) {
+    } else {
+      // we schedule the server to "monitor" (i.e.: send regular updates)
+      // for all variables except audio, which we want to "watch" (i.e.: stream
+      // continuosly), scatter updates over time so to minimise chances of
+      // dropped blocks.
+      // TODO: once the backend becomes less resource-intensive when sending
+      // data, remove this.
+      let monitorPeriods = Array();
+      for(let n = 0; n < monitorWatchers.length; ++n)
+        monitorPeriods.push(3000 + n * 64);
+      Watcher.sendCommand({
+        cmd: "monitor",
+        watchers: monitorWatchers,
+        periods: monitorPeriods,
+      });
+      Watcher.sendCommand({
+        cmd: "watch",
+        watchers: streamWatchers,
+      });
+    }
+  } else console.log(data.watcher);
+}
+
+function processValues() {
+  let inBufs = Bela.data.buffers;
+  if(!inBufs.length)
+    return;
+  let buffers = Watcher.parseInputData(inBufs, list, guiPollsAndUsesList);
+  for(let n = 0; n < buffers.length; ++n) {
+    let buf = buffers[n];
+    let w = buf.watcher;
+    let group;
+    let num;
+    if("digital" == w) {
+      group = "digital";
+    } else {
+      let numStarts = w.search(/[0-9]/);
+      if(-1 == numStarts) {
+        console.log("Unexpected watcher", w);
+        continue;
+      }
+      group = w.substr(0, numStarts);
+      num = parseInt(w.substr(numStarts, w.length));
+    }
+    let value = buf.buf[0];
+    switch(group) {
+      case "digital":
+        for(let c = 0; c < nGpios && c < leds.length && c < switches.length; ++c) {
+          let oldIsIn = switches[c].getState(c);
+          let isIn = !!(value & (1 << c));
+          let state = !!(value & (1 << (c + nGpios)));
+          let controlled = digitalIsChannelControlled(c);
+          if(oldIsIn != isIn && !controlled) {
+            switches[c].setState(isIn);
+            // force updating the LED hue depending on the switch's state
+            // TODO: factor this out from mousePressed() and call that instead of
+            // duplicating code here
+            leds[c].makeClickable(!isIn);
+            if(isIn)
+                leds[c].setColour(ledHue);
+            else
+                leds[c].setColour(buttonHue);
+          }
+          if(!controlled || isIn)
+            leds[c].setState(state);
+        }
+        break;
+      case "analogIn":
+        if(num < analogLedBars.length) {
+          analogLedBars[num].setBarValue(value);
+        }
+        break;
+      case "analogOut":
+        if(num < sliders.length) {
+          if(ctlAnalogOut[num].getState()) {
+          } else {
+            sliders[num].setValue(value);
+          }
+        }
+        break;
+      case "envIn":
+        if(num < audioLedBars.length) {
+          audioLedBars[num].setBarValue(value);
+        }
+        break;
+      case "audioIn":
+        if(num < scopes.length) {
+          for(let n = 0; n < scopes[num].w && n < buf.buf.length; ++n) {
+            let sample = buf.buf[n] * 0.5 + 0.5;
+            scopes[num].addSample(sample);
+          }
+        }
+        break;
+      case "envOut":
+        break;
+      case "audioOut":
+        break;
+      default:
+        console.log("unhandled ", group);
+    }
+  }
+}
+
+document.addEventListener('visibilitychange', function() {
+  updateClientActive(!document.hidden)
+});
+
+let clientActive = null;
+function updateClientActive(active) {
+  if(active !== clientActive) {
+    clientActive = active;
+    let evt = clientActive ? "active" : "inactive";
+    Bela.control.send({event: evt});
+  }
+}
+
+function mm2px(mm)
+{
+  return 96 * mm / 25.4;
+}
+
+var ledHue = 400;
+var buttonHue = 250;
+var analogLedBarHue = 100;
+var audioLedBarHue = 200;
+
+var nGpios = 16;
+var nAnalogOut = 8;
+var nAnalogIn = 8;
+var nAudioIn = 2;
+
+let ctlColors;
+var leds = [];
+var switches = [];
+var ctlSwitches = [];
+var sliders = [];
+var ctlAnalogOut = [];
+var analogLedBars = [];
+var scopes = [];
+var audioLedBars = [];
+
+var text_y = 50;
+var led_y = 65;
+var analog_y = 320;
+var analog_in_x = 200;
+var led_spacing = 50
+
+function setup() {
+  frameRate(10);
+  Watcher.sendCommand({cmd: "list"});
+  Bela.control.registerCallback("controlCallback", controlCallback);
+  createCanvas(windowWidth, windowHeight);
+  // setupGuis() once with default counts, for prototyping purposes
+  // will be overridden in controlCallback in response to "list"c
+  loopbackDemo = true;
+  ctlColors = {
+    outline: color(0, 0, 0),
+    text: color(0, 255, 0),
+    active: color(0, 128, 0),
+  }
+  setupGuis();
+}
+  
+function setupGuis(){
+  let led_initial_x = windowWidth/2 - (nGpios + 1) * 0.5 * led_spacing;
+  
+  ctlSwitches = [];
+  switches = [];
+  leds = [];
+  for (let i = 0; i < nGpios; i++)
+  {
+        let x_position = led_initial_x + (i+1) * 50; 
+        
+        leds.push(new LED(ledHue, mm2px(10)));
+
+        leds[i].position(x_position, led_y, false);
+    
+        switches.push(new ToggleSwitch(mm2px(8)));
+        switches[i].position(x_position, led_y + 1.5 * leds[i].diameter, false);
+        ctlSwitches.push(new ToggleSwitch(mm2px(4), ' ', 'C', ctlColors));
+        ctlSwitches[i].position(x_position, led_y + 3.0 * leds[i].diameter, false);
+        ctlSwitches[i].setState(0);
+  }
+  
+  ctlAnalogOut = [];
+  sliders = [];
+  let slider_initial_x = 3*windowWidth/4;
+  let slider_spacing = 50;
+  slider_initial_x = slider_initial_x- floor(0.8* nAnalogOut) * slider_spacing
+  for (let i = 0; i < nAnalogOut; i++)
+  {
+      sliders.push(new Slider(mm2px(6), mm2px(40), false));
+      sliders[i].position(slider_initial_x + i * slider_spacing, analog_y , false);
+      sliders[i].setValue(0);
+      ctlAnalogOut.push(new ToggleSwitch(mm2px(4), ' ', 'C', ctlColors));
+      ctlAnalogOut[i].position(slider_initial_x + i * slider_spacing + 20, analog_y + 60);
+      ctlAnalogOut[i].setState(0);
+  }
+
+  analogLedBars = [];
+  let bar_initial_x = windowWidth/4;
+  let bar_spacing = 50;
+  bar_initial_x = bar_initial_x - floor(0.2* nAnalogIn) * bar_spacing
+  for (let i = 0; i < nAnalogIn; i++)
+  {
+      // analogLedBars.push(new BarGraph(mm2px(4), mm2px(8), 10, analogLedBarHue));
+      analogLedBars.push(new BarGraph(mm2px(0.125), mm2px(6), 320, analogLedBarHue, false));
+
+      analogLedBars[i].setEdgeSpacing(5);
+      analogLedBars[i].setLedSpacing(0);
+      analogLedBars[i].setEdgeRounding(0);
+ 
+      analogLedBars[i].position(bar_initial_x  + i * bar_spacing, analog_y, false);
+
+  }
+  
+  scopes = [];
+  audioLedBars = [];
+  for (let i = 0; i < nAudioIn; i++)
+  {
+      let pos_x = 2 * windowWidth/6  + i * (2 * windowWidth/6)
+      scopes.push(new SignalScope(mm2px(75), (mm2px(50))));
+      scopes[i].position(pos_x, analog_y + 225, false);
+    
+      audioLedBars.push(new BarGraph(mm2px(3.75), mm2px(8), 15, audioLedBarHue));
+      audioLedBars[i].position(pos_x, scopes[i].y + 0.5 * scopes[i].h + 30, false);
+
+  }
+  if(simplifiedCtl) {
+    ctlSwitches.forEach((el) => { el.show(false); });
+    ctlAnalogOut.map((v, i, a) => {
+      let el = a[i];
+      el.setState(true);
+      analogOutControlSet(i, ctlAnalogOut[i].getState());
+      el.show(false);
+    });
+  }
+}
+
+let clientActiveTimeout;
+function draw() {
+  // refresh watchdog
+  clearTimeout(clientActiveTimeout);
+  clientActiveTimeout = setTimeout(() => {
+    updateClientActive(false);
+  }, 1000);
+  updateClientActive(true);
+
+  if(!loopbackDemo)
+    processValues();
+  background(220);
+  
+  for (let i = 0; i < leds.length; i++)
+    leds[i].draw();
+  
+  for (let i = 0; i < switches.length; i++)
+    switches[i].draw();
+  
+  for (let i = 0; i < ctlSwitches.length; i++)
+    ctlSwitches[i].draw();
+
+  for (let i = 0; i < sliders.length; i++)
+    sliders[i].draw();
+  
+  for (let i = 0; i < ctlAnalogOut.length; i++)
+    ctlAnalogOut[i].draw();
+
+  for (let i = 0; i < sliders.length; i++)
+  {
+    if(i < analogLedBars.length && loopbackDemo)
+    {
+      let val = sliders[i].getValue();
+      analogLedBars[i].setBarValue(val);
+    }
+  }
+ 
+  for (let i = 0; i < analogLedBars.length; i++)
+    analogLedBars[i].draw();
+  
+  for (let i = 0; i < scopes.length; i++)
+  {
+    if(i < sliders.length && loopbackDemo)
+      scopes[i].addSample(sliders[i].getValue());
+    scopes[i].draw();
+  }
+  
+  for (let i = 0; i < audioLedBars.length; i++)
+    audioLedBars[i] .draw();
+
+
+  /* LABELS */
+  push();
+  textAlign(CENTER, CENTER);
+  textSize(15);
+  
+  let text_x = windowWidth / 2;//(leds[leds.length-1].x - leds[0].x) * 0.5;
+  let text_y = leds[0].y - 40
+  let line_y = text_y + 10
+
+  text("DIGITAL I/O", text_x, text_y);
+  line(leds[0].x - 0.5 * leds[0].diameter, line_y, leds[leds.length-1].x + 0.5 * leds[leds.length-1].diameter, line_y);
+  
+  text_x = analogLedBars[0].x + 0.5 * (analogLedBars[analogLedBars.length - 1].x - analogLedBars[0].x);
+  text_y = analogLedBars[0].y - analogLedBars[0].bar.h * 0.5 - 25;
+  line_y = text_y + 10
+  
+  text("ANALOG IN", text_x, text_y);
+  line(analogLedBars[0].x - 0.5 * analogLedBars[0].bar.w, line_y, analogLedBars[0].x + 0.5 * analogLedBars[0].bar.w, line_y)
+  line(analogLedBars[0].x, line_y, analogLedBars[analogLedBars.length - 1].x, line_y)
+
+  if(sliders.length)
+  {
+    text_x = sliders[0].x + 0.5 * (sliders[sliders.length - 1].x - sliders[0].x); //sliders[0].x
+    text_y = sliders[0].y - sliders[0].h * 0.5 - 25;
+    line_y = text_y + 10
+  
+    text("ANALOG OUT", text_x, text_y);
+    line(sliders[0].x, line_y, sliders[sliders.length - 1].x, line_y)
+
+  }
+
+  
+if(scopes.length) {
+  text_x = windowWidth/2;
+  text_y = scopes[0].y - 0.5 * scopes[0].h - 25
+  line_y = text_y + 10
+  
+  text("AUDIO IN", text_x, text_y);
+  line(scopes[0].x - 0.5 * scopes[0].w, line_y, scopes[scopes.length - 1].x + 0.5 * scopes[scopes.length - 1].w, line_y)
+}
+
+  pop();
+  
+  /* NUMERIC LABELS */
+  
+  for (let i = 0; i < leds.length; i++)
+  {
+     // Labels
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    stroke(220);
+    fill(220);
+    text(str(i), leds[i].x, led_y);
+    pop();
+  }
+  
+  for (let i = 0; i < sliders.length; i++)
+  {
+    // Labels
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    text(str(i), sliders[i].x - 0.5 * sliders[i].w, sliders[i].y - sliders[i].h / 2 - 6, 25);
+    pop();
+  }
+   
+  for (let i = 0; i < analogLedBars.length; i++)
+  {
+    // Labels
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    text(str(i), analogLedBars[i].x - 0.5 * analogLedBars[i].bar.w, analogLedBars[i].y - analogLedBars[i].bar.h / 2 - 6 , 25);
+    pop();
+  }   
+  
+  for (let i = 0; i < scopes.length; i++)
+  {
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    text(str(i), scopes[i].x - 0.5 * scopes[i].w - 25, scopes[i].y, 25);
+    pop();
+  }
+  
+  for (let i = 0; i < audioLedBars.length; i++)
+  {
+    push();
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    text(str(i), audioLedBars[i].x - 0.5 * audioLedBars[i].bar.w - 25, audioLedBars[i].y, 25);
+    pop();
+  }
+}
+
+function mousePressed()
+{
+  for (let i = 0; i < leds.length; i++)
+  {
+    ctlSwitches[i].click();
+    if(ctlSwitches[i].hasChanged()) {
+      digitalControlSet(i, ctlSwitches[i].getState());
+    }
+    switches[i].click();
+    let s_state = switches[i].getState();
+    leds[i].makeClickable(!s_state);
+    if(simplifiedCtl){
+      digitalControlSet(i, 0 == switches[i].getState());
+    }
+
+    if(!s_state)
+        leds[i].setColour(buttonHue);
+    else
+        leds[i].setColour(ledHue);
+    leds[i].click()
+    
+    if(leds[i].hasChanged() || switches[i].hasChanged()) {
+      console.log("Gpio " + i + " has changed to", switches[i].getState() ? "input" : "output", leds[i].getState());
+      if(digitalIsChannelControlled(i)) {
+        digitalSendValues();
+      }
+    }
+  }
+  
+  for (let i = 0; i < sliders.length; i++)
+  {
+    ctlAnalogOut[i].click();
+    if(ctlAnalogOut[i].hasChanged()) {
+      analogOutControlSet(i, ctlAnalogOut[i].getState());
+    }
+    sliders[i].click();
+  }
+  
+  for (let i = 0; i < scopes.length; i++)
+  {
+    scopes[i].click();
+  }
+
+}
+
+function mouseDragged()
+{
+  analogOutSendValues();
+}
+
+function mouseReleased()
+{
+  analogOutSendValues();
+  for (let i = 0; i < sliders.length; i++)
+  {
+      sliders[i].release();
+  }
+}
+
+function doubleClicked()
+{
+  for (let i = 0; i < sliders.length; i++)
+  {
+    sliders[i].doubleClick();
+  }
+}
+
+
+
