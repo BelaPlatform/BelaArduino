@@ -11,6 +11,7 @@
 #define BELA_LIBPD_TRILL
 //#define BELA_LIBPD_GUI
 #define BELA_LIBPD_SERIAL
+#define BELA_LIBPD_SYSTEM_THREADED
 #define BELA_LIBPD_ARDUINO
 
 #ifdef BELA_LIBPD_DISABLE_SCOPE
@@ -28,6 +29,9 @@
 #ifdef BELA_LIBPD_DISABLE_SERIAL
 #undef BELA_LIBPD_SERIAL
 #endif // BELA_LIBPD_DISABLE_SERIAL
+#ifdef BELA_LIBPD_DISABLE_SYSTEM_THREADD
+#undef BELA_LIBPD_SYSTEM_THREADED
+#endif // BELA_LIBPD_DISABLE_SYSTEM_THREADD
 #ifdef BELA_LIBPD_DISABLE_ARDUINO
 #undef BELA_LIBPD_ARDUINO
 #endif // BELA_LIBPD_DISABLE_ARDUINO
@@ -38,7 +42,9 @@
 #include <stdio.h>
 
 #ifdef BELA_LIBPD_MIDI
+#include <algorithm>
 #include <libraries/Midi/Midi.h>
+#include <libraries/Pipe/Pipe.h>
 #endif // BELA_LIBPD_MIDI
 #ifdef BELA_LIBPD_SCOPE
 #include <libraries/Scope/Scope.h>
@@ -164,20 +170,31 @@ bool guiControlDataCallback(JSONObject& root, void* arg)
 #ifdef BELA_LIBPD_SERIAL
 #include <libraries/Serial/Serial.h>
 #include <libraries/Pipe/Pipe.h>
+#include <RtLock.h>
 #include <string>
 
-Pipe gSerialPipe;
-Serial gSerial;
-std::string gSerialId;
-int gSerialEom;
+static Pipe gSerialPipe;
 enum SerialType {
 	kSerialFloats,
 	kSerialBytes,
 	kSerialSymbol,
 	kSerialSymbols,
-} gSerialType = kSerialFloats;
-AuxiliaryTask gSerialInputTask;
-AuxiliaryTask gSerialOutputTask;
+};
+
+struct SerialStruct {
+	Serial* serial;
+	std::string id;
+	int eom;
+	enum SerialType type;
+};
+// this is a vector of pointers so that updating it won't affect the address of
+// pre-existing SerialStruct objects. This is necessary because these pointers
+// are passed to each input threads on creation and need to be constant
+// throughout the lifetime of the program.
+static std::vector<SerialStruct*> gSerial;
+// used to protect the gSerial vector, which is modified from the audio thread
+// and accessed from the writing thread
+static RtMutex gSerialMutex;
 
 struct serialMessageHeader
 {
@@ -196,15 +213,15 @@ struct SerialPipeState {
 	char id[100];
 };
 
-static void processSerialPipe(bool rt, SerialPipeState& s)
+static void processSerialPipe(bool rt, SerialPipeState& state)
 {
 	// Not sure we actually need while() below. We were using it earlier
 	// when this was coded inside render() in order to be able to perform early returns
 	while(1)
 	{
-		auto& h = s.h;
-		auto& waitingFor = s.waitingFor;
-		auto& id = s.id;
+		auto& h = state.h;
+		auto& waitingFor = state.waitingFor;
+		auto& id = state.id;
 		if(kHeader == waitingFor)
 		{
 			int ret = rt ? gSerialPipe.readRt(h) : gSerialPipe.readNonRt(h);
@@ -241,6 +258,24 @@ static void processSerialPipe(bool rt, SerialPipeState& s)
 				rt_fprintf(stderr, "Invalid number of bytes read from gSerialPipe. Expected: %u, got %u\n", h.dataSize, ret);
 				break;
 			}
+			// changes to gSerial happen from within the audio
+			// thread, so only the non-rt thread needs to lock
+			std::unique_lock<RtMutex> lock(gSerialMutex, std::defer_lock);
+			if(!rt)
+				lock.lock();
+			SerialStruct* s = nullptr;
+			for(auto ss : gSerial)
+			{
+				if(ss->id == id)
+					s = ss;
+			}
+			if(!rt)
+				lock.unlock();
+			if(!s)
+			{
+				rt_fprintf(stderr, "Couldn't find serial id \"%s\" in gSerial\n", id);
+				return;
+			}
 			if(rt)
 			{
 				// rt: forward data from pipe to Pd
@@ -248,11 +283,11 @@ static void processSerialPipe(bool rt, SerialPipeState& s)
 				if(h.dataSize)
 				{
 					const char* rec = "bela_serialIn";
-					if(kSerialSymbol == gSerialType)
+					if(kSerialSymbol == s->type)
 					{
 						libpd_symbol(rec, data);
-					} else if(kSerialBytes == gSerialType) {
-						if(gSerialEom >= 0) {
+					} else if(kSerialBytes == s->type) {
+						if(s->eom >= 0) {
 							// messages are separated: send as a list
 							libpd_start_message(h.dataSize);
 							for(size_t n = 0; n < h.dataSize; ++n)
@@ -302,9 +337,9 @@ static void processSerialPipe(bool rt, SerialPipeState& s)
 							if(end)
 							{
 								data[n] = '\0'; // ensure the string is null-terminated so the next line works
-								if(kSerialSymbols == gSerialType)
+								if(kSerialSymbols == s->type)
 									libpd_add_symbol(data + start);
-								else if (kSerialFloats == gSerialType)
+								else if (kSerialFloats == s->type)
 									libpd_add_float(atof(data + start));
 								start = n + 1;
 							}
@@ -315,7 +350,7 @@ static void processSerialPipe(bool rt, SerialPipeState& s)
 			} else {
 				// non-rt: forward data from pipe to serial
 				if(h.dataSize)
-					gSerial.write(data, h.dataSize);
+					s->serial->write(data, h.dataSize);
 			}
 			waitingFor = kHeader;
 		}
@@ -337,21 +372,22 @@ static void serialOutputLoop(void* arg) {
 }
 
 static void serialInputLoop(void* arg) {
+	SerialStruct& s = *(SerialStruct*)arg;
 	char serialBuffer[10000];
 	unsigned int i = 0;
 	serialMessageHeader h;
-	h.idSize = strlen(gSerialId.c_str()) + 1;
+	h.idSize = strlen(s.id.c_str()) + 1;
 	while(!Bela_stopRequested())
 	{
 		// read from the serial port with a timeout of 100ms
-		int ret = gSerial.read(serialBuffer + i, sizeof(serialBuffer) - i, 100);
+		int ret = s.serial->read(serialBuffer + i, sizeof(serialBuffer) - i, 100);
 		if (ret > 0) {
-			if(gSerialEom < 0)
+			if(s.eom < 0)
 			{
 				h.dataSize = ret;
 				// send everything immediately
 				gSerialPipe.writeNonRt(h);
-				gSerialPipe.writeNonRt(gSerialId.c_str(), h.idSize);
+				gSerialPipe.writeNonRt(s.id.c_str(), h.idSize);
 				gSerialPipe.writeNonRt(serialBuffer, h.dataSize);
 			} else {
 				// find EOM in new data
@@ -365,7 +401,7 @@ static void serialInputLoop(void* arg) {
 					found = false;
 					for(n = searchStart; n < searchStop; ++n)
 					{
-						if(serialBuffer[n] == gSerialEom)
+						if(serialBuffer[n] == s.eom)
 						{
 							found = true;
 							break;
@@ -378,7 +414,7 @@ static void serialInputLoop(void* arg) {
 						if(h.dataSize)
 						{
 							gSerialPipe.writeNonRt(h);
-							gSerialPipe.writeNonRt(gSerialId.c_str(), h.idSize);
+							gSerialPipe.writeNonRt(s.id.c_str(), h.idSize);
 							gSerialPipe.writeNonRt(serialBuffer + lastSent, h.dataSize);
 						}
 						searchStart = n + 1;
@@ -389,8 +425,11 @@ static void serialInputLoop(void* arg) {
 				// if we are left with any data, move it to the beginning of the buffer.
 				// TODO: avoid this and use it as a circular buffer
 				if(searchStart != i)
+				{
 					memmove(serialBuffer, serialBuffer + searchStart, searchStop - searchStart);
-				i = searchStop - searchStart;
+					i = searchStop - searchStart;
+				} else
+					i = i + searchStop - searchStart;
 			}
 		}
 	}
@@ -429,10 +468,131 @@ float* gInBuf;
 float* gOutBuf;
 #ifdef BELA_LIBPD_MIDI
 #define PARSE_MIDI
-static std::vector<Midi*> midi;
-std::vector<std::string> gMidiPortNames;
 int gMidiVerbose = 1;
 const int kMidiVerbosePrintLevel = 1;
+#include <thread>
+
+static Midi* openMidiDevice(const std::string& name, bool verboseSuccess = false, bool verboseError = false);
+static const std::string& midiName(const Midi* m)
+{
+	// assumes input and output are the same subdevice
+	if(m) {
+		if(m->isInputEnabled())
+			return m->getInputPort().name;
+		else if(m->isOutputEnabled())
+			return m->getOutputPort().name;
+	}
+	static const std::string none("NONE");
+	return none;
+}
+
+static std::thread gMidiDiscoveryThread;
+static volatile bool gMidiDiscoveryThreadShouldStop;
+static volatile bool gMidiDiscoveryThreadAuto;
+static bool gMidiAny;
+
+Pipe gMidiDiscoveryPipe("midiDiscoveryPipe");
+enum MidiDiscoveryCmd {
+	kMidiAdd,
+	kMidiAck,
+};
+struct MidiDiscoveryMsgFromNonRt {
+	MidiDiscoveryCmd cmd;
+	Midi* ptr;
+};
+struct MidiDiscoveryMsgFromRt {
+	MidiDiscoveryCmd cmd;
+	Midi* ptr;
+	char name[32];
+};
+
+static volatile unsigned int gNumMidiDevicesInitialised = 0;
+static void midiDiscovery()
+{
+	gMidiDiscoveryPipe.setBlockingNonRt(true);
+	gMidiDiscoveryPipe.setTimeoutMsNonRt(100);
+	// it's hard to use inotify meaningfully, so we poll instead
+	auto shouldStop = []() {
+		return Bela_stopRequested() || gMidiDiscoveryThreadShouldStop;
+	};
+
+	std::vector<std::string> toOpen;
+	std::vector<Midi*> localMidi;
+	std::vector<MidiDiscoveryMsgFromNonRt> msgs;
+	int count = 1;
+	bool doDiscovery = false;
+	while(!shouldStop())
+	{
+		msgs.resize(0);
+		if(gNumMidiDevicesInitialised == localMidi.size())
+		{
+			//printf("We are equal: %d\n", gNumMidiDevicesInitialised);
+			// when we are fully synced up:
+			if(doDiscovery && !toOpen.size() && gMidiDiscoveryThreadAuto)
+			{
+				doDiscovery = false;
+				// do discovery
+				auto list = Midi::listAllPorts();
+				for(auto& l : list)
+				{
+					// Check if there are new devices that are not open yet.
+					toOpen.push_back(l.name);
+					// NOTE: devices that are unplugged and plugged back in
+					// that were previously initialised will be automatically reopened,
+					// so we are only concerned with new devices here.
+				}
+				count = 0;
+			}
+			while(toOpen.size())
+			{
+				std::string name = toOpen[0];
+				toOpen.erase(toOpen.begin());
+				bool found = false;
+				for(const auto m : localMidi)
+				{
+					if(midiName(m) == name)
+					{
+						found = true;
+						break;
+					}
+				}
+				if(!found)
+				{
+					printf("New device %s, opening it\n", name.c_str());
+					Midi* midi = openMidiDevice(name);
+					if(midi) {
+						MidiDiscoveryMsgFromNonRt msg =  {
+							.cmd = kMidiAdd,
+							.ptr = midi,
+						};
+						msgs.push_back(msg);
+						gNumMidiDevicesInitialised++;
+						break;
+					}
+				}
+			}
+		}
+		if(count++ > 20)
+			doDiscovery = true;
+		for(auto& msg : msgs)
+			gMidiDiscoveryPipe.writeNonRt(msg);
+		MidiDiscoveryMsgFromRt msg;
+		// potentially blocking read
+		int ret = gMidiDiscoveryPipe.readNonRt(msg);
+		if(1 == ret)
+		{
+			if(kMidiAck == msg.cmd)
+			{
+				localMidi.push_back(msg.ptr);
+				void dumpMidi();
+				dumpMidi();
+			}
+			if(kMidiAdd == msg.cmd)
+				toOpen.push_back(msg.name);
+		}
+	}
+}
+static std::vector<Midi*> midi;
 
 void dumpMidi()
 {
@@ -451,18 +611,19 @@ void dumpMidi()
 	      );
 	for(unsigned int n = 0; n < midi.size(); ++n)
 	{
-		printf("[%2d]%20s %3s %3s (%d-%d)\n", 
+		printf("[%2d]%20s %3s %3s (%d-%d) %s\n",
 			n,
-			gMidiPortNames[n].c_str(),
+			midiName(midi[n]).c_str(),
 			midi[n]->isInputEnabled() ? "x" : "_",
 			midi[n]->isOutputEnabled() ? "x" : "_",
 			n * 16 + 1,
-			n * 16 + 16
+			n * 16 + 16,
+			gMidiAny ? "(ANY)" : ""
 		);
 	}
 }
 
-Midi* openMidiDevice(std::string name, bool verboseSuccess = false, bool verboseError = false)
+static Midi* openMidiDevice(const std::string& name, bool verboseSuccess, bool verboseError)
 {
 	Midi* newMidi;
 	newMidi = new Midi();
@@ -494,6 +655,9 @@ Midi* openMidiDevice(std::string name, bool verboseSuccess = false, bool verbose
 }
 
 static unsigned int getPortChannel(int* channel){
+	// improper way of using ANY, maybe it should be sending out to all of them instead
+	if(gMidiAny)
+		return 0;
 	unsigned int port = 0;
 	while(*channel >= 16){
 		*channel -= 16;
@@ -580,10 +744,23 @@ void setTrillPrintError()
 }
 #endif // BELA_LIBPD_TRILL
 
+static void systemDoSystem(const char* cmd)
+{
+	rt_printf("system(\"%s\");\n", cmd);
+	system(cmd);
+}
+#ifdef BELA_LIBPD_SYSTEM_THREADED
+#include <AuxTaskNonRT.h>
+static AuxTaskNonRT systemTask("systemTask", [](const void* buf, int size) {
+	systemDoSystem((const char*)buf);
+});
+
+#endif // BELA_LIBPD_SYSTEM_THREADED
+
 static void belaSystem(const char* first, int argc, t_atom* argv)
 {
-	printf("belaSystem %s, %d\n", first, argc);
-	std::string cmd = first ? first : "";
+	static std::string cmd; // make it static to try and avoid repeated allocations
+	cmd = first ? first : "";
 	for(size_t n = 0; n < argc; ++n)
 	{
 		if(0 != n || first)
@@ -597,12 +774,15 @@ static void belaSystem(const char* first, int argc, t_atom* argv)
 		} else if(libpd_is_symbol(argv + n)) {
 			cmd += libpd_get_symbol(argv + n);
 		} else {
-			fprintf(stderr, "Error: argument %d of bela_system is not a float or symbol. Command so far: '%s', this will be discarded\n", n, cmd.c_str());
+			rt_fprintf(stderr, "Error: argument %d of bela_system is not a float or symbol. Command so far: '%s', this will be discarded\n", n, cmd.c_str());
 			return;
 		}
 	}
-	printf("system(\"%s\");\n", cmd.c_str());
-	system(cmd.c_str());
+#ifdef BELA_LIBPD_SYSTEM_THREADED
+	systemTask.schedule(cmd.c_str(), cmd.size());
+#else // BELA_LIBPD_SYSTEM_THREADED
+	systemDoSystem(cmd.c_str());
+#endif // // BELA_LIBPD_SYSTEM_THREADED
 }
 
 void Bela_listHook(const char *source, int argc, t_atom *argv)
@@ -653,7 +833,6 @@ void Bela_listHook(const char *source, int argc, t_atom *argv)
 #endif // BELA_LIBPD_GUI
 	if(0 == strcmp(source, "bela_system"))
 	{
-		printf("list: %d\n", argc);
 		belaSystem(nullptr, argc, argv);
 		return;
 	}
@@ -677,6 +856,26 @@ void Bela_messageHook(const char *source, const char *symbol, int argc, t_atom *
 			}
 			return;
 		}
+		if(0 == strcmp("auto", symbol))
+		{
+			if(!gMidiDiscoveryThread.joinable())
+				gMidiDiscoveryThread = std::thread(midiDiscovery);
+			bool value = true;
+			if(argc && libpd_is_float(argv))
+				value = libpd_get_float(argv);
+			rt_printf("%s automatic discover of new MIDI devices\n", value ? "Enabling" : "Disabling");
+			gMidiDiscoveryThreadAuto = value;
+			return;
+		}
+		if(0 == strcmp("any", symbol))
+		{
+			bool value = true;
+			if(argc && libpd_is_float(argv))
+				value = libpd_get_float(argv);
+			rt_printf("%s MIDI any\n", value ? "Enabling" : "Disabling");
+			gMidiAny = value;
+			return;
+		}
 		int num[3] = {0, 0, 0};
 		for(int n = 0; n < argc && n < 3; ++n)
 		{
@@ -687,16 +886,19 @@ void Bela_messageHook(const char *source, const char *symbol, int argc, t_atom *
 			}
 			num[n] = libpd_get_float(&argv[n]);
 		}
+		// TODO: this string/stream business is not actually realtime-safe.
 		std::ostringstream deviceName;
 		deviceName << symbol << ":" << num[0] << "," << num[1] << "," << num[2];
-		printf("Adding Midi device: %s\n", deviceName.str().c_str());
-		Midi* newMidi = openMidiDevice(deviceName.str(), false, true);
-		if(newMidi)
-		{
-			midi.push_back(newMidi);
-			gMidiPortNames.push_back(deviceName.str());
+		MidiDiscoveryMsgFromRt msg = {
+				.cmd = kMidiAdd,
+			};
+		std::string name = deviceName.str();
+		if(name.size() + 1 > sizeof(msg.name)) {
+			fprintf(stderr, "MIDI name too long: %s\n", name.c_str());
+			return;
 		}
-		dumpMidi();
+		strncpy(msg.name, deviceName.str().c_str(), sizeof(msg.name));
+		gMidiDiscoveryPipe.writeRt(msg);
 		return;
 	}
 #endif // BELA_LIBPD_MIDI
@@ -738,8 +940,8 @@ void Bela_messageHook(const char *source, const char *symbol, int argc, t_atom *
 		return;
 	}
 	if(strcmp(source, "bela_system") == 0){
-		printf("msg: %s %d\n", symbol, argc);
 		belaSystem(symbol, argc, argv);
+		return;
 	}
 	if(strcmp(source, "bela_control") == 0){
 		if(strcmp("stop", symbol) == 0){
@@ -804,31 +1006,47 @@ void Bela_messageHook(const char *source, const char *symbol, int argc, t_atom *
 				"and `type` is one of `bytes`, `floats`, `symbol`, `symbols`\n");
 				return;
 			}
-			gSerialId = libpd_get_symbol(argv + 0);
+			const char* id = libpd_get_symbol(argv + 0);
 			const char* device = libpd_get_symbol(argv + 1);
 			unsigned int baudrate = libpd_get_float(argv + 2);
-			gSerialEom = -1;
+			int eom = -1;
 			if(libpd_is_symbol(argv + 3)) {
-				const char* eom = libpd_get_symbol(argv + 3);
-				if(0 == strcmp(eom, "newline"))
-					gSerialEom = '\n';
+				const char* eomChar = libpd_get_symbol(argv + 3);
+				if(0 == strcmp(eomChar, "newline"))
+					eom = '\n';
 			} else if(libpd_is_float(argv + 3)) {
-				gSerialEom = libpd_get_float(argv + 3);
+				eom = libpd_get_float(argv + 3);
 			}
-			const char* type = libpd_get_symbol(argv + 4);
-			if(0 == strcmp("floats", type))
-				gSerialType = kSerialFloats;
-			else if(0 == strcmp("bytes", type))
-				gSerialType = kSerialBytes;
-			else if(0 == strcmp("symbol", type))
-				gSerialType = kSerialSymbol;
-			else if(0 == strcmp("symbols", type))
-				gSerialType = kSerialSymbols;
-
-			if(gSerial.setup(device, baudrate))
+			const char* typeChar = libpd_get_symbol(argv + 4);
+			enum SerialType type = kSerialFloats;
+			if(0 == strcmp("floats", typeChar))
+				type = kSerialFloats;
+			else if(0 == strcmp("bytes", typeChar))
+				type = kSerialBytes;
+			else if(0 == strcmp("symbol", typeChar))
+				type = kSerialSymbol;
+			else if(0 == strcmp("symbols", typeChar))
+				type = kSerialSymbols;
+			Serial* serial = new Serial;
+			if(serial->setup(device, baudrate))
+			{
+				delete serial;
 				return;
-			gSerialInputTask = Bela_runAuxiliaryTask(serialInputLoop, 0);
-			gSerialOutputTask = Bela_runAuxiliaryTask(serialOutputLoop, 0);
+			}
+			SerialStruct* serialStruct = new SerialStruct {
+				serial,
+				id,
+				eom,
+				type,
+			};
+			std::unique_lock<RtMutex> lock(gSerialMutex);
+			gSerial.push_back(serialStruct);
+			lock.unlock();
+			// a dedicated input loop for each serial device
+			Bela_scheduleAuxiliaryTask(Bela_createAuxiliaryTask(serialInputLoop, 0, ("in." + std::string(device)).c_str(), (void*)serialStruct));
+			// a single output loop for all serial devices, started when the first one is created
+			if(gSerial.size() == 1)
+				Bela_scheduleAuxiliaryTask(Bela_createAuxiliaryTask(serialOutputLoop, 0, "serial-output-loop"));
 		}
 	}
 	if(0 == strcmp(source, "bela_serialOut"))
@@ -1079,9 +1297,9 @@ bool setup(BelaContext *context, void *userData)
 
 #ifdef BELA_LIBPD_MIDI
 	// add here other devices you need 
-	gMidiPortNames.push_back("hw:1,0,0");
-	//gMidiPortNames.push_back("hw:0,0,0");
-	//gMidiPortNames.push_back("hw:1,0,1");
+	std::vector<std::string> midiPortNames;
+	midiPortNames.push_back("hw:1,0,0");
+	//midiPortNames.push_back("hw:0,0,0");
 #endif // BELA_LIBPD_MIDI
 #ifdef BELA_LIBPD_SCOPE
 	scope.setup(gScopeChannelsInUse, context->audioSampleRate);
@@ -1130,19 +1348,17 @@ bool setup(BelaContext *context, void *userData)
 	}
 
 #ifdef BELA_LIBPD_MIDI
-	unsigned int n = 0;
-	while(n < gMidiPortNames.size())
+	gMidiDiscoveryThread = std::thread(midiDiscovery);
+	unsigned int numValidDevices = 0;
+	for(const auto & name : midiPortNames)
 	{
-		Midi* newMidi = openMidiDevice(gMidiPortNames[n], false, false);
-		if(newMidi)
-		{
-			midi.push_back(newMidi);
-			++n;
-		} else {
-			gMidiPortNames.erase(gMidiPortNames.begin() + n);
-		}
+		MidiDiscoveryMsgFromRt msg;
+		msg.cmd = kMidiAdd;
+		strncpy(msg.name, name.c_str(), sizeof(msg.name));
+		gMidiDiscoveryPipe.writeRt(msg);
+		numValidDevices++;
 	}
-	dumpMidi();
+	midi.reserve(numValidDevices + 10); // hope we can avoid reallocation for a while
 #endif // BELA_LIBPD_MIDI
 
 	// check that we are not running with a blocksize smaller than gLibPdBlockSize
@@ -1326,7 +1542,7 @@ void render(BelaContext *context, void *userData)
 #endif // BELA_LIBPD_GUI
 #ifdef BELA_LIBPD_SERIAL
 	static SerialPipeState serialPipeStateRt {};
-	if(gSerialInputTask)
+	if(gSerial.size())
 		processSerialPipe(true, serialPipeStateRt);
 #endif // BELA_LIBPD_SERIAL
 #ifdef BELA_LIBPD_TRILL
@@ -1404,6 +1620,23 @@ void render(BelaContext *context, void *userData)
 	}
 #endif // BELA_LIBPD_TRILL
 #ifdef BELA_LIBPD_MIDI
+	static unsigned int localNumMidiDevices = 0;
+	if(localNumMidiDevices != gNumMidiDevicesInitialised)
+	{
+		MidiDiscoveryMsgFromNonRt msg;
+		while(1 == gMidiDiscoveryPipe.readRt(msg))
+		{
+			if(kMidiAdd == msg.cmd)
+			{
+				midi.push_back(msg.ptr);
+				MidiDiscoveryMsgFromRt res;
+				res.cmd = kMidiAck;
+				res.ptr = msg.ptr;
+				gMidiDiscoveryPipe.writeRt(res);
+				localNumMidiDevices++;
+			}
+		}
+	}
 #ifdef PARSE_MIDI
 	int num;
 	for(unsigned int port = 0; port < midi.size(); ++port){
@@ -1412,16 +1645,19 @@ void render(BelaContext *context, void *userData)
 			message = midi[port]->getParser()->getNextChannelMessage();
 			if(gMidiVerbose >= kMidiVerbosePrintLevel)
 			{
-				rt_printf("On port %d (%s): ", port, gMidiPortNames[port].c_str());
+				rt_printf("On port %d (%s): ", port, midiName(midi[port]).c_str());
 				message.prettyPrint(); // use this to print beautified message (channel, data bytes)
 			}
+
+			int channel = message.getChannel();
+			if(!gMidiAny)
+				channel += port * 16;
 			switch(message.getType()){
 				case kmmNoteOn:
 				{
 					int noteNumber = message.getDataByte(0);
 					int velocity = message.getDataByte(1);
-					int channel = message.getChannel();
-					libpd_noteon(channel + port * 16, noteNumber, velocity);
+					libpd_noteon(channel, noteNumber, velocity);
 					break;
 				}
 				case kmmNoteOff:
@@ -1432,51 +1668,44 @@ void render(BelaContext *context, void *userData)
 					 */
 					int noteNumber = message.getDataByte(0);
 	//				int velocity = message.getDataByte(1); // would be ignored by Pd
-					int channel = message.getChannel();
-					libpd_noteon(channel + port * 16, noteNumber, 0);
+					libpd_noteon(channel, noteNumber, 0);
 					break;
 				}
 				case kmmControlChange:
 				{
-					int channel = message.getChannel();
 					int controller = message.getDataByte(0);
 					int value = message.getDataByte(1);
-					libpd_controlchange(channel + port * 16, controller, value);
+					libpd_controlchange(channel, controller, value);
 					break;
 				}
 				case kmmProgramChange:
 				{
-					int channel = message.getChannel();
 					int program = message.getDataByte(0);
-					libpd_programchange(channel + port * 16, program);
+					libpd_programchange(channel, program);
 					break;
 				}
 				case kmmPolyphonicKeyPressure:
 				{
-					int channel = message.getChannel();
 					int pitch = message.getDataByte(0);
 					int value = message.getDataByte(1);
-					libpd_polyaftertouch(channel + port * 16, pitch, value);
+					libpd_polyaftertouch(channel, pitch, value);
 					break;
 				}
 				case kmmChannelPressure:
 				{
-					int channel = message.getChannel();
 					int value = message.getDataByte(0);
-					libpd_aftertouch(channel + port * 16, value);
+					libpd_aftertouch(channel, value);
 					break;
 				}
 				case kmmPitchBend:
 				{
-					int channel = message.getChannel();
 					int value =  ((message.getDataByte(1) << 7)| message.getDataByte(0)) - 8192;
-					libpd_pitchbend(channel + port * 16, value);
+					libpd_pitchbend(channel, value);
 					break;
 				}
 				case kmmSystem:
 				// currently Bela only handles sysrealtime, and it does so pretending it is a channel message with no data bytes, so we have to re-assemble the status byte
 				{
-					int channel = message.getChannel();
 					int status = message.getStatusByte();
 					int byte = channel | status;
 					libpd_sysrealtime(port, byte);
@@ -1619,6 +1848,8 @@ void cleanup(BelaContext *context, void *userData)
 	BelaArduino_cleanup(context, userData);
 #endif // BELA_LIBPD_ARDUINO
 #ifdef BELA_LIBPD_MIDI
+	if(gMidiDiscoveryThread.joinable())
+		gMidiDiscoveryThread.join();
 	for(auto a : midi)
 	{
 		delete a;
@@ -1631,5 +1862,12 @@ void cleanup(BelaContext *context, void *userData)
 		delete t.second;
 	}
 #endif // BELA_LIBPD_TRILL
+#ifdef BELA_LIBPD_SERIAL
+	for(auto s : gSerial)
+	{
+		delete s->serial;
+		delete s;
+	}
+#endif // BELA_LIBPD_SERIAL
 	libpd_closefile(gPatch);
 }
