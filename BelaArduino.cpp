@@ -3,12 +3,15 @@
 #include "Arduino.h"
 #include "PdArduino.h"
 #include <Bela.h>
+
+// These defines may be overridden at runtime
+// according to settings
 #define ENABLE_LIBPD
 #define ENABLE_WATCHER
 #define ENABLE_GUI
 #define ENABLE_SHIFTOUT
-#define WATCH_ONCE
 #define WATCH_AUDIO
+static BelaArduinoSettings settings;
 
 #ifdef ENABLE_WATCHER
 #include "Watcher.h"
@@ -325,8 +328,9 @@ void processPipe(BelaContext* context)
 	}
 }
 
-bool BelaArduino_setup(BelaContext* context, void*)
+bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& settings)
 {
+	::settings = settings;
 #ifdef ENABLE_LIBPD
 	libpd_bind("bela_arduino");
 #endif // ENABLE_LIBPD
@@ -345,47 +349,50 @@ bool BelaArduino_setup(BelaContext* context, void*)
 		return false;
 	}
 #ifdef ENABLE_GUI
-	gui.setup(context->projectName);
+	if(settings.useGui)
+		gui.setup(context->projectName);
 #endif // ENABLE_GUI
 #ifdef ENABLE_WATCHER
-	Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
-	std::string watcherSketch = std::string("/projects/") + context->projectName + "/sketch-watcher.js";
-#ifdef ENABLE_GUI
-	Bela_getDefaultWatcherManager()->getGui().setup(watcherSketch, 5556); // use /gui?wsPort=5556
-#else // ENABLE_GUI
-	Bela_getDefaultWatcherManager()->getGui().setup(watcherSketch);
-#endif // ENABLE_GUI
-	if(context->digital)
-		wdigital = new Watcher<uint32_t>("digital");
-	wAnalogIn.resize(context->analogInChannels);
-	for(size_t n = 0; n < context->analogInChannels; ++n)
-		wAnalogIn[n] = new Watcher<float>({std::string("analogIn") + std::to_string(n)});
-	wAnalogOut.resize(context->analogOutChannels);
-	for(size_t n = 0; n < context->analogOutChannels; ++n)
-		wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n)});
+	if(settings.useWatcher)
+	{
+		Bela_getDefaultWatcherManager()->setup(context->audioSampleRate);
+		std::string watcherSketch = std::string("/projects/") + context->projectName + "/sketch-watcher.js";
+		Bela_getDefaultWatcherManager()->getGui().setup(watcherSketch, settings.watcherPort);
+		if(context->digital)
+			wdigital = new Watcher<uint32_t>("digital");
+		wAnalogIn.resize(context->analogInChannels);
+		for(size_t n = 0; n < context->analogInChannels; ++n)
+			wAnalogIn[n] = new Watcher<float>({std::string("analogIn") + std::to_string(n)});
+		wAnalogOut.resize(context->analogOutChannels);
+		for(size_t n = 0; n < context->analogOutChannels; ++n)
+			wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n)});
 
 #ifdef WATCH_AUDIO
-	wAudioIn.resize(context->audioInChannels);
-	wEnvIn.resize(context->audioInChannels);
-	rmsIn.resize(context->audioInChannels);
-	float decay = 0.05;
-	for(size_t n = 0; n < context->audioInChannels; ++n)
-	{
-		wAudioIn[n] = new Watcher<float>({std::string("audioIn") + std::to_string(n)});
-		wEnvIn[n] = new Watcher<float>({std::string("envIn") + std::to_string(n)});
-		rmsIn[n].setDecay(decay);
-	}
+		if(settings.watchAudio)
+		{
+			wAudioIn.resize(context->audioInChannels);
+			wEnvIn.resize(context->audioInChannels);
+			rmsIn.resize(context->audioInChannels);
+			float decay = 0.05;
+			for(size_t n = 0; n < context->audioInChannels; ++n)
+			{
+				wAudioIn[n] = new Watcher<float>({std::string("audioIn") + std::to_string(n)});
+				wEnvIn[n] = new Watcher<float>({std::string("envIn") + std::to_string(n)});
+				rmsIn[n].setDecay(decay);
+			}
 
-	wAudioOut.resize(context->audioOutChannels);
-	wEnvOut.resize(context->audioOutChannels);
-	rmsOut.resize(context->audioOutChannels);
-	for(size_t n = 0; n < context->audioOutChannels; ++n)
-	{
-		wAudioOut[n] = new Watcher<float>({std::string("audioOut") + std::to_string(n)});
-		wEnvOut[n] = new Watcher<float>({std::string("envOut") + std::to_string(n)});
-		rmsOut[n].setDecay(decay);
-	}
+			wAudioOut.resize(context->audioOutChannels);
+			wEnvOut.resize(context->audioOutChannels);
+			rmsOut.resize(context->audioOutChannels);
+			for(size_t n = 0; n < context->audioOutChannels; ++n)
+			{
+				wAudioOut[n] = new Watcher<float>({std::string("audioOut") + std::to_string(n)});
+				wEnvOut[n] = new Watcher<float>({std::string("envOut") + std::to_string(n)});
+				rmsOut[n].setDecay(decay);
+			}
+		}
 #endif // WATCH_AUDIO
+	}
 #endif // ENABLE_WATCHER
 	analogIn.resize(context->analogInChannels);
 	analogOut.resize(context->analogOutChannels);
@@ -406,7 +413,7 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 {
 	processPipe(context);
 #ifdef ENABLE_WATCHER
-	gWatcherConnected = Bela_getDefaultWatcherManager()->getGui().numConnections();
+	gWatcherConnected = settings.useWatcher && Bela_getDefaultWatcherManager()->getGui().numConnections();
 	if(gWatcherConnected)
 	{
 		Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
@@ -414,26 +421,31 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 		{
 			for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
 			{
-#ifdef WATCH_ONCE
-				if(n > 0)
-					break;
-#endif // WATCH_ONCE
+				if(settings.watchOnce)
+				{
+					if(n > 0)
+						break;
+				}
 				float value = analogReadNI(context, n, c);
 				wAnalogIn[c]->set(value);
 			}
 #ifdef WATCH_AUDIO
-			for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
+			if(settings.watchAudio)
 			{
-				float value = audioReadNI(context, n, c);
-				wAudioIn[c]->set(value);
-				rmsIn[c].process(value);
-				wEnvIn[c]->set(rmsIn[c].getEnv());
+				for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
+				{
+					float value = audioReadNI(context, n, c);
+					wAudioIn[c]->set(value);
+					rmsIn[c].process(value);
+					wEnvIn[c]->set(rmsIn[c].getEnv());
+				}
 			}
 #endif // WATCH_AUDIO
-#ifdef WATCH_ONCE
-			if(n > 0)
-				continue;
-#endif // WATCH_ONCE
+			if(settings.watchOnce)
+			{
+				if(n > 0)
+					continue;
+			}
 			wdigital->set(context->digital[n]);
 		}
 	}
@@ -502,10 +514,11 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 		}
 		for(size_t n = 0; n < context->analogFrames; ++n)
 		{
-#ifdef WATCH_ONCE
-			if(n > 0)
-				break;
-#endif // WATCH_ONCE
+			if(settings.watchOnce)
+			{
+				if(n > 0)
+					break;
+			}
 			for(size_t c = 0; c < context->analogOutChannels; ++c)
 				wAnalogOut[c]->set(context->analogOut[c * context->analogFrames + n]);
 		}
@@ -515,14 +528,17 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 				analogWriteNI(context, 0, c, *wAnalogOut[c]);
 		}
 #ifdef WATCH_AUDIO
-		for(size_t n = 0; n < context->audioFrames; ++n)
+		if(settings.watchAudio)
 		{
-			for(size_t c = 0; c < context->audioOutChannels; ++c)
+			for(size_t n = 0; n < context->audioFrames; ++n)
 			{
-				float val = context->audioOut[c * context->audioFrames + n];
-				wAudioOut[c]->set(val);
-				rmsOut[c].process(val);
-				wEnvOut[c]->set(rmsOut[c].getEnv());
+				for(size_t c = 0; c < context->audioOutChannels; ++c)
+				{
+					float val = context->audioOut[c * context->audioFrames + n];
+					wAudioOut[c]->set(val);
+					rmsOut[c].process(val);
+					wEnvOut[c]->set(rmsOut[c].getEnv());
+				}
 			}
 		}
 #endif // WATCH_AUDIO

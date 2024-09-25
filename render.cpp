@@ -11,7 +11,8 @@ bool setup(BelaContext* context, void* userData)
 	settings.floatHook = BelaArduino_floatHook;
 	if(!BelaLibpd_setup(context, userData, settings))
 		return false;
-	if(!BelaArduino_setup(context, userData))
+	BelaArduinoSettings arduinoSettings;
+	if(!BelaArduino_setup(context, userData, arduinoSettings))
 		return false;
 	return true;
 }

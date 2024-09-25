@@ -26,7 +26,16 @@ int BelaArduino_floatHook(const char* source, float value);
 int BelaArduino_listHook(const char* source, int argc, t_atom *argv);
 int BelaArduino_messageHook(const char* source, const char *symbol, int argc, t_atom *argv);
 
-bool BelaArduino_setup(BelaContext* context, void*);
+struct BelaArduinoSettings
+{
+	bool useWatcher = true;
+	bool watchOnce = true;
+	bool watchAudio = true;
+	unsigned int watcherPort = 5556;
+	bool useGui = true;
+};
+
+bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& settings);
 void BelaArduino_renderTop(BelaContext* context, void*);
 void BelaArduino_renderBottom(BelaContext* context, void*);
 void BelaArduino_cleanup(BelaContext* context, void*);
