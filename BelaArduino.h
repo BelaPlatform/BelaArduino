@@ -22,9 +22,9 @@ extern Pipe belaArduinoPipe;
 extern std::vector<float> analogIn;
 extern std::vector<float> analogOut;
 
-void BelaArduino_floatHook(float value);
-void BelaArduino_listHook(int argc, t_atom *argv);
-void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv);
+int BelaArduino_floatHook(const char* source, float value);
+int BelaArduino_listHook(const char* source, int argc, t_atom *argv);
+int BelaArduino_messageHook(const char* source, const char *symbol, int argc, t_atom *argv);
 
 bool BelaArduino_setup(BelaContext* context, void*);
 void BelaArduino_renderTop(BelaContext* context, void*);

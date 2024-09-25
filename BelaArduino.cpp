@@ -179,19 +179,24 @@ void msgSendToArduino(const char* str, const float* vals, size_t count)
 static AuxiliaryTask arduinoLoopTask;
 
 #ifdef ENABLE_LIBPD
-void BelaArduino_floatHook(float value)
+int BelaArduino_floatHook(const char* source, float value)
 {
+	if(strcmp(source, "bela_arduino"))
+		return 1;
 	if(pdReceiveMsg)
 		msgSendToArduino("float", &value, 1);
+	return 0;
 }
 
-void BelaArduino_listHook(int argc, t_atom *argv)
+int BelaArduino_listHook(const char* source, int argc, t_atom *argv)
 {
-	BelaArduino_messageHook("list", argc, argv);
+	return BelaArduino_messageHook(source, "list", argc, argv);
 }
 
-void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv)
+int BelaArduino_messageHook(const char* source, const char *symbol, int argc, t_atom *argv)
 {
+	if(strcmp(source, "bela_arduino"))
+		return 1;
 	float payload[argc];
 	for(size_t n = 0; n < argc; ++n)
 	{
@@ -202,6 +207,7 @@ void BelaArduino_messageHook(const char *symbol, int argc, t_atom *argv)
 	}
 	if(pdReceiveMsg)
 		msgSendToArduino(symbol, payload, argc);
+	return 0;
 }
 
 static std::vector<char> selector(1000);
@@ -544,27 +550,12 @@ void BelaArduino_cleanup(BelaContext* context, void*)
 #endif // WATCH_AUDIO
 #endif // ENABLE_WATCHER
 }
-#ifndef ENABLE_LIBPD
+
+// this may not be used if libpd is enable, as the one in BelaLibpd.o would
+// normally be encountered first by the linker and thus take priority
 void Bela_userSettings(BelaInitSettings *settings)
 {
 	settings->uniformSampleRate = 1;
 	settings->interleave = 0;
 	settings->analogOutputsPersist = 0;
 }
-
-bool setup(BelaContext* context, void* userData)
-{
-	return BelaArduino_setup(context, userData);
-}
-
-void render(BelaContext* context, void* userData)
-{
-	BelaArduino_renderTop(context, userData);
-	BelaArduino_renderBottom(context, userData);
-}
-
-void cleanup(BelaContext* context, void* userData)
-{
-	BelaArduino_cleanup(context, userData);
-}
-#endif // ENABLE_LIBPD
