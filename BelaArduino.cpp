@@ -14,6 +14,7 @@
 static BelaArduinoSettings settings;
 
 #ifdef ENABLE_WATCHER
+#define WATCHER_DISABLE_DEFAULT
 #include "Watcher.h"
 static Gui wmGui;
 static WatcherManager wm(wmGui);
