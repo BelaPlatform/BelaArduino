@@ -33,6 +33,7 @@ struct Print {
 	{
 		return true;
 	}
+	void write(uint8_t);
 };
 
 extern Print Serial;
