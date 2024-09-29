@@ -1,8 +1,11 @@
 #include <libraries/BelaLibpd/BelaLibpd.h>
 #include <BelaArduino.h>
+#include "Watcher.h"
+Watcher<float> myvar("myvar"); // this is the user-define watcher
 
 bool setup(BelaContext* context, void* userData)
 {
+	Bela_getDefaultWatcherManager()->getGui().setup(std::string("/projects/") + context->projectName + "/upstream.js", 1234);
 	BelaLibpdSettings settings;
 	settings.useIoThreaded = false;
 	settings.useGui = false;
@@ -19,6 +22,11 @@ bool setup(BelaContext* context, void* userData)
 
 void render(BelaContext* context, void* userData)
 {
+	if(Bela_getDefaultWatcherManager()->getGui().numConnections())
+		Bela_getDefaultWatcherManager()->tick(context->audioFramesElapsed);
+	myvar = myvar + 0.001;
+	if(myvar >= 1)
+		myvar = 0;
 	BelaArduino_renderTop(context, userData);
 	BelaLibpd_render(context, userData);
 	BelaArduino_renderBottom(context, userData);
