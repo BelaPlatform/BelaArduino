@@ -341,16 +341,6 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 	ShiftRegister::Pins pins {}; // dummy
 	shiftRegisterOut.setup(pins, shiftOutBits.size()); // preallocat
 #endif // ENABLE_SHIFTOUT
-	if((context->analogFrames && context->analogFrames != context->audioFrames) || (context->digitalFrames && context->digitalFrames != context->audioFrames))
-	{
-		fprintf(stderr, "Error: analog, audio and digital must have the same sampling rate\n");
-		return false;
-	}
-	if(context->flags & BELA_FLAG_INTERLEAVED)
-	{
-		fprintf(stderr, "Error: buffers most be non-interleaved\n");
-		return false;
-	}
 #ifdef ENABLE_GUI
 	if(settings.useGui)
 		gui.setup(context->projectName);
@@ -429,7 +419,7 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 					if(n > 0)
 						break;
 				}
-				float value = analogReadNI(context, n, c);
+				float value = analogRead(context, n, c);
 				wAnalogIn[c]->set(value);
 			}
 #ifdef WATCH_AUDIO
@@ -437,7 +427,7 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 			{
 				for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
 				{
-					float value = audioReadNI(context, n, c);
+					float value = audioRead(context, n, c);
 					wAudioIn[c]->set(value);
 					rmsIn[c].process(value);
 					wEnvIn[c]->set(rmsIn[c].getEnv());
@@ -454,7 +444,7 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 	}
 #endif // ENABLE_WATCHER
 	for(size_t c = 0; c < context->analogInChannels; ++c)
-		analogIn[c] = analogReadNI(context, 0, c);
+		analogIn[c] = analogRead(context, 0, c);
 	for(size_t c = 0; c < context->digitalChannels; ++c)
 	{
 		if(kDigitalModeInput == digital[c].mode)
@@ -528,7 +518,7 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 		for(size_t c = 0; c < context->analogOutChannels; ++c)
 		{
 			if(!wAnalogOut[c]->hasLocalControl())
-				analogWriteNI(context, 0, c, *wAnalogOut[c]);
+				analogWrite(context, 0, c, *wAnalogOut[c]);
 		}
 #ifdef WATCH_AUDIO
 		if(settings.watchAudio)
@@ -568,13 +558,4 @@ void BelaArduino_cleanup(BelaContext* context, void*)
 		delete a;
 #endif // WATCH_AUDIO
 #endif // ENABLE_WATCHER
-}
-
-// this may not be used if libpd is enable, as the one in BelaLibpd.o would
-// normally be encountered first by the linker and thus take priority
-void Bela_userSettings(BelaInitSettings *settings)
-{
-	settings->uniformSampleRate = 1;
-	settings->interleave = 0;
-	settings->analogOutputsPersist = 0;
 }
