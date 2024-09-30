@@ -7,18 +7,18 @@
 // These defines may be overridden at runtime
 // according to settings
 #define ENABLE_LIBPD
-#define ENABLE_WATCHER
+#define ENABLE_CONTROL_PANEL
 #define ENABLE_GUI
 #define ENABLE_SHIFTOUT
-#define WATCH_AUDIO
+#define CONTROL_PANEL_AUDIO
 static BelaArduinoSettings settings;
 
-#ifdef ENABLE_WATCHER
+#ifdef ENABLE_CONTROL_PANEL
 #define WATCHER_DISABLE_DEFAULT
 #include "Watcher.h"
 static Gui wmGui;
 static WatcherManager wm(wmGui);
-#endif // ENABLE_WATCHER
+#endif // ENABLE_CONTROL_PANEL
 #ifdef ENABLE_GUI
 #include <libraries/Gui/Gui.h>
 Gui gui;
@@ -116,20 +116,20 @@ std::vector<DigitalChannel> digital;
 Pipe belaArduinoPipe;
 std::vector<float> analogIn;
 std::vector<float> analogOut;
-#ifdef ENABLE_WATCHER
-static int gWatcherConnected;
+#ifdef ENABLE_CONTROL_PANEL
+static int gControlPanelConnected;
 static Watcher<uint32_t>* wdigital;
 static std::vector<Watcher<float>*> wAnalogIn;
 static std::vector<Watcher<float>*> wAnalogOut;
-#ifdef WATCH_AUDIO
+#ifdef CONTROL_PANEL_AUDIO
 static std::vector<Watcher<float>*> wAudioIn;
 static std::vector<Watcher<float>*> wAudioOut;
 std::vector<Watcher<float>*> wEnvIn;
 std::vector<Watcher<float>*> wEnvOut;
 std::vector<RmsDetector> rmsIn;
 std::vector<RmsDetector> rmsOut;
-#endif // WATCH_AUDIO
-#endif // ENABLE_WATCHER
+#endif // CONTROL_PANEL_AUDIO
+#endif // ENABLE_CONTROL_PANEL
 
 static void ArduinoSetup()
 {
@@ -345,12 +345,12 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 	if(settings.useGui)
 		gui.setup(context->projectName);
 #endif // ENABLE_GUI
-#ifdef ENABLE_WATCHER
-	if(settings.useWatcher)
+#ifdef ENABLE_CONTROL_PANEL
+	if(settings.useControlPanel)
 	{
 		wm.setup(context->audioSampleRate);
-		std::string watcherSketch = std::string("/projects/") + context->projectName + "/sketch-watcher.js";
-		wm.getGui().setup(watcherSketch, settings.watcherPort); // use /gui?wsPort=watcherPort
+		std::string controlPanelSketch = std::string("/projects/") + context->projectName + "/sketch-control-panel.js";
+		wm.getGui().setup(controlPanelSketch, settings.controlPanelPort); // use /gui?wsPort=controlPanelPort
 		if(context->digital)
 			wdigital = new Watcher<uint32_t>("digital", wm);
 		wAnalogIn.resize(context->analogInChannels);
@@ -360,8 +360,8 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 		for(size_t n = 0; n < context->analogOutChannels; ++n)
 			wAnalogOut[n] = new Watcher<float>({std::string("analogOut") + std::to_string(n), wm});
 
-#ifdef WATCH_AUDIO
-		if(settings.watchAudio)
+#ifdef CONTROL_PANEL_AUDIO
+		if(settings.controlPanelAudio)
 		{
 			wAudioIn.resize(context->audioInChannels);
 			wEnvIn.resize(context->audioInChannels);
@@ -384,9 +384,9 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 				rmsOut[n].setDecay(decay);
 			}
 		}
-#endif // WATCH_AUDIO
+#endif // CONTROL_PANEL_AUDIO
 	}
-#endif // ENABLE_WATCHER
+#endif // ENABLE_CONTROL_PANEL
 	analogIn.resize(context->analogInChannels);
 	analogOut.resize(context->analogOutChannels);
 	digital.resize(context->digitalChannels);
@@ -405,16 +405,16 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 void BelaArduino_renderTop(BelaContext* context, void*)
 {
 	processPipe(context);
-#ifdef ENABLE_WATCHER
-	gWatcherConnected = settings.useWatcher && wm.getGui().numConnections();
-	if(gWatcherConnected)
+#ifdef ENABLE_CONTROL_PANEL
+	gControlPanelConnected = settings.useControlPanel && wm.getGui().numConnections();
+	if(gControlPanelConnected)
 	{
 		wm.tick(context->audioFramesElapsed);
 		for(size_t n = 0; n < context->audioFrames; ++n) // assumes uniform sampling rate and non-interleaved buffers
 		{
 			for(size_t c = 0; c < context->analogInChannels && c < wAnalogIn.size(); ++c)
 			{
-				if(settings.watchOnce)
+				if(settings.controlPanelOnce)
 				{
 					if(n > 0)
 						break;
@@ -422,8 +422,8 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 				float value = analogRead(context, n, c);
 				wAnalogIn[c]->set(value);
 			}
-#ifdef WATCH_AUDIO
-			if(settings.watchAudio)
+#ifdef CONTROL_PANEL_AUDIO
+			if(settings.controlPanelAudio)
 			{
 				for(size_t c = 0; c < context->audioInChannels && c < wAudioIn.size(); ++c)
 				{
@@ -433,8 +433,8 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 					wEnvIn[c]->set(rmsIn[c].getEnv());
 				}
 			}
-#endif // WATCH_AUDIO
-			if(settings.watchOnce)
+#endif // CONTROL_PANEL_AUDIO
+			if(settings.controlPanelOnce)
 			{
 				if(n > 0)
 					continue;
@@ -442,7 +442,7 @@ void BelaArduino_renderTop(BelaContext* context, void*)
 			wdigital->set(context->digital[n]);
 		}
 	}
-#endif // ENABLE_WATCHER
+#endif // ENABLE_CONTROL_PANEL
 	for(size_t c = 0; c < context->analogInChannels; ++c)
 		analogIn[c] = analogRead(context, 0, c);
 	for(size_t c = 0; c < context->digitalChannels; ++c)
@@ -493,8 +493,8 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 			shiftOutInProgress = false;
 	}
 #endif // ENABLE_SHIFTOUT
-#ifdef ENABLE_WATCHER
-	if(gWatcherConnected)
+#ifdef ENABLE_CONTROL_PANEL
+	if(gControlPanelConnected)
 	{
 		unsigned int mask;
 		if((mask = wdigital->getMask()))
@@ -507,7 +507,7 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 		}
 		for(size_t n = 0; n < context->analogFrames; ++n)
 		{
-			if(settings.watchOnce)
+			if(settings.controlPanelOnce)
 			{
 				if(n > 0)
 					break;
@@ -520,8 +520,8 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 			if(!wAnalogOut[c]->hasLocalControl())
 				analogWrite(context, 0, c, *wAnalogOut[c]);
 		}
-#ifdef WATCH_AUDIO
-		if(settings.watchAudio)
+#ifdef CONTROL_PANEL_AUDIO
+		if(settings.controlPanelAudio)
 		{
 			for(size_t n = 0; n < context->audioFrames; ++n)
 			{
@@ -534,20 +534,20 @@ void BelaArduino_renderBottom(BelaContext* context, void*)
 				}
 			}
 		}
-#endif // WATCH_AUDIO
+#endif // CONTROL_PANEL_AUDIO
 	}
-#endif // ENABLE_WATCHER
+#endif // ENABLE_CONTROL_PANEL
 }
 
 void BelaArduino_cleanup(BelaContext* context, void*)
 {
-#ifdef ENABLE_WATCHER
+#ifdef ENABLE_CONTROL_PANEL
 	delete wdigital;
 	for(auto& a : wAnalogIn)
 		delete a;
 	for(auto& a : wAnalogOut)
 		delete a;
-#ifdef WATCH_AUDIO
+#ifdef CONTROL_PANEL_AUDIO
 	for(auto& a : wAudioIn)
 		delete a;
 	for(auto& a : wAudioOut)
@@ -556,6 +556,6 @@ void BelaArduino_cleanup(BelaContext* context, void*)
 		delete a;
 	for(auto& a : wEnvOut)
 		delete a;
-#endif // WATCH_AUDIO
-#endif // ENABLE_WATCHER
+#endif // CONTROL_PANEL_AUDIO
+#endif // ENABLE_CONTROL_PANEL
 }

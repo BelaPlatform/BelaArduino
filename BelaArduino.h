@@ -28,10 +28,10 @@ int BelaArduino_messageHook(const char* source, const char *symbol, int argc, t_
 
 struct BelaArduinoSettings
 {
-	bool useWatcher = true;
-	bool watchOnce = true;
-	bool watchAudio = true;
-	unsigned int watcherPort = 5556;
+	bool useControlPanel = true;
+	bool controlPanelOnce = true;
+	bool controlPanelAudio = true;
+	unsigned int controlPanelPort = 5556;
 	bool useGui = true;
 };
 
