@@ -1,6 +1,6 @@
 #include "BelaArduino.h"
 #include "Arduino.h" // has to come after BelaArduino because of the #define s it contains
-#include <BelaMsg.h>
+#include "BelaMsg.h"
 
 Print Serial;
 

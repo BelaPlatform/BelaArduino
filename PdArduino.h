@@ -1,5 +1,5 @@
 #pragma once
-#include <BelaMsg.h>
+#include "BelaMsg.h"
 
 extern "C" {
 #pragma weak pdReceiveMsg

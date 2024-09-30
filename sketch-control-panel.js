@@ -2,13 +2,13 @@
 //
 let serverInactivePopup;
 function preload() {
-  let basePath = "/projects/" + Bela.control.handler.project + "/gui/";
+  let basePath = "/libraries/BelaArduino/gui/";
   loadScript(basePath + "Slider.js");
   loadScript(basePath + "ToggleSwitch.js");
   loadScript(basePath + "LED.js");
   loadScript(basePath + "BarGraph.js");
   loadScript(basePath + "SignalScope.js");
-  loadScript(basePath + "../watcher.js");
+  loadScript("/libraries/Watcher/Watcher.js");
   let id = "serverInactivePopup";
   let container = $("#gui-container");
   container.prepend("<div id='" + id + "'>SERVER IS INACTIVE</div>");

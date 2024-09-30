@@ -15,7 +15,7 @@ static BelaArduinoSettings settings;
 
 #ifdef ENABLE_CONTROL_PANEL
 #define WATCHER_DISABLE_DEFAULT
-#include "Watcher.h"
+#include <libraries/Watcher/Watcher.h>
 static Gui wmGui;
 static WatcherManager wm(wmGui);
 #endif // ENABLE_CONTROL_PANEL
@@ -343,14 +343,18 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 #endif // ENABLE_SHIFTOUT
 #ifdef ENABLE_GUI
 	if(settings.useGui)
+	{
 		gui.setup(context->projectName);
+		printf("BelaArduino: sketch.js GUI at bela.local/gui\n");
+	}
 #endif // ENABLE_GUI
 #ifdef ENABLE_CONTROL_PANEL
 	if(settings.useControlPanel)
 	{
 		wm.setup(context->audioSampleRate);
-		std::string controlPanelSketch = std::string("/projects/") + context->projectName + "/sketch-control-panel.js";
-		wm.getGui().setup(controlPanelSketch, settings.controlPanelPort); // use /gui?wsPort=controlPanelPort
+		std::string controlPanelSketch = "/libraries/BelaArduino/sketch-control-panel.js";
+		wm.getGui().setup(controlPanelSketch, settings.controlPanelPort);
+		printf("BelaArduino: control panel at bela.local/gui?wsPort=%d\n", settings.controlPanelPort);
 		if(context->digital)
 			wdigital = new Watcher<uint32_t>("digital", wm);
 		wAnalogIn.resize(context->analogInChannels);

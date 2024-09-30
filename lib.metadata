@@ -1,0 +1,5 @@
+name=BelaArduino
+description=Compatibility layer with Arduino, mixing it with Pd
+examples=
+license=
+dependencies=BelaLibpd Watcher ShiftRegister
