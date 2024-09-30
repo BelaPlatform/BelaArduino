@@ -204,8 +204,12 @@ function controlCallback(data) {
 
 function processValues() {
   let inBufs = Bela.data.buffers;
-  if(!inBufs.length)
-    return;
+  if(!inBufs.length) {
+    if(guiPollsAndUsesList) // add fake empty entries in the array so parseInputData can work
+      inBufs.length = list.length + nAudioIn;
+    else
+      return;
+  }
   let buffers = Watcher.parseInputData(inBufs, list, guiPollsAndUsesList);
   for(let n = 0; buffers && n < buffers.length; ++n) {
     let buf = buffers[n];
