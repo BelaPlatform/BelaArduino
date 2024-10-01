@@ -331,6 +331,15 @@ void processPipe(BelaContext* context)
 	}
 }
 
+static void printGui(const std::string& desc, int port)
+{
+	printf("%s GUI at bela.local/gui", desc.c_str());
+	if(5555 == port)
+		printf("\n");
+	else
+		printf("?wsPort=%d\n", port);
+}
+
 bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& settings)
 {
 	::settings = settings;
@@ -344,8 +353,8 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 #ifdef ENABLE_GUI
 	if(settings.useGui)
 	{
-		gui.setup(context->projectName);
-		printf("BelaArduino: sketch.js GUI at bela.local/gui\n");
+		gui.setup(context->projectName, settings.guiPort);
+		printGui("BelaArduino: sketch.js", settings.guiPort);
 	}
 #endif // ENABLE_GUI
 #ifdef ENABLE_CONTROL_PANEL
@@ -354,7 +363,8 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 		wm.setup(context->audioSampleRate);
 		std::string controlPanelSketch = "/libraries/BelaArduino/sketch-control-panel.js";
 		wm.getGui().setup(controlPanelSketch, settings.controlPanelPort);
-		printf("BelaArduino: control panel at bela.local/gui?wsPort=%d\n", settings.controlPanelPort);
+		printGui("BelaArduino: control panel", settings.controlPanelPort);
+
 		if(context->digital)
 			wdigital = new Watcher<uint32_t>("digital", wm);
 		wAnalogIn.resize(context->analogInChannels);

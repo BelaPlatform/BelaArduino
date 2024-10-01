@@ -30,9 +30,10 @@ struct BelaArduinoSettings
 {
 	bool useControlPanel = true;
 	bool controlPanelOnce = true;
-	bool controlPanelAudio = true;
-	unsigned int controlPanelPort = 5556;
+	bool controlPanelAudio = false;
+	unsigned int controlPanelPort = 5555;
 	bool useGui = true;
+	unsigned int guiPort = 5556;
 };
 
 bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& settings);
