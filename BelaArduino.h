@@ -28,6 +28,7 @@ int BelaArduino_messageHook(const char* source, const char *symbol, int argc, t_
 
 struct BelaArduinoSettings
 {
+	bool useLibpd = true;
 	bool useControlPanel = true;
 	bool controlPanelOnce = true;
 	bool controlPanelAudio = false;

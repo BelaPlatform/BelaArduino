@@ -280,7 +280,7 @@ void processPipe(BelaContext* context)
 			digital[channel].mode = mode;
 		}
 #ifdef ENABLE_LIBPD
-		if(kBelaReceiverPd == p.rec)
+		if(kBelaReceiverPd == p.rec && settings.useLibpd)
 		{
 			bool isList = false;
 			if(p.numTags < 2 || !p.isString(0))
@@ -344,7 +344,8 @@ bool BelaArduino_setup(BelaContext* context, void*, const BelaArduinoSettings& s
 {
 	::settings = settings;
 #ifdef ENABLE_LIBPD
-	libpd_bind("bela_arduino");
+	if(settings.useLibpd)
+		libpd_bind("bela_arduino");
 #endif // ENABLE_LIBPD
 #ifdef ENABLE_SHIFTOUT
 	ShiftRegister::Pins pins {}; // dummy
