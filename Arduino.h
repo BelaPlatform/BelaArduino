@@ -1,8 +1,11 @@
 #pragma once
 
+#define ARDUINO 100
+
 #include <stdint.h>
 #define pgm_read_byte(ADDR) (*(ADDR))
-#define F(...)
+#define F(...) __VA_ARGS__
+
 #ifndef NULL
 #define NULL nullptr
 #endif // NULL
@@ -65,6 +68,7 @@ void analogWrite(uint32_t, float);
 void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin, uint8_t bitOrder, uint8_t numBits, uint32_t val);
 
 typedef char __FlashStringHelper;
+typedef uint8_t byte;
 #define strlen_P strlen
 #include <Utilities.h>
 void utoa(uint32_t, char*, size_t);
